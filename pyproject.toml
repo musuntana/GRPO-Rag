@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ragos"
+version = "0.1.0"
+description = "RAGOS multi-tenant AI workflow and RAG platform scaffold"
+readme = "docs/architecture.md"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.14.0",
+  "fastapi>=0.115.0",
+  "langgraph>=0.2.60",
+  "langgraph-checkpoint-postgres>=2.0.0",
+  "psycopg[binary]>=3.2.0",
+  "pydantic-settings>=2.6.0",
+  "qdrant-client>=1.12.0",
+  "sqlalchemy>=2.0.36",
+  "sqlmodel>=0.0.22",
+  "uvicorn>=0.32.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28.0",
+  "pytest>=8.3.0",
+  "ruff>=0.8.0",
+]
+
+[project.scripts]
+ragos-api = "ragos_api.main:run"
+ragos-workflow-worker = "ragos_workflow_worker.main:run"
+
+[tool.setuptools]
+packages = [
+  "ragos.auth",
+  "ragos.core",
+  "ragos.model_gateway",
+  "ragos.model_gateway.providers",
+  "ragos.runtime",
+  "ragos.storage",
+  "ragos.storage.models",
+  "ragos.storage.repositories",
+  "ragos.tenant",
+  "ragos_api",
+  "ragos_api.routes",
+  "ragos_workflow_worker",
+]
+
+[tool.setuptools.package-dir]
+"ragos.auth" = "packages/auth/src/ragos/auth"
+"ragos.core" = "packages/core/src/ragos/core"
+"ragos.model_gateway" = "packages/model-gateway/src/ragos/model_gateway"
+"ragos.model_gateway.providers" = "packages/model-gateway/src/ragos/model_gateway/providers"
+"ragos.runtime" = "packages/runtime/src/ragos/runtime"
+"ragos.storage" = "packages/storage/src/ragos/storage"
+"ragos.storage.models" = "packages/storage/src/ragos/storage/models"
+"ragos.storage.repositories" = "packages/storage/src/ragos/storage/repositories"
+"ragos.tenant" = "packages/tenant/src/ragos/tenant"
+"ragos_api" = "apps/api-server/src/ragos_api"
+"ragos_api.routes" = "apps/api-server/src/ragos_api/routes"
+"ragos_workflow_worker" = "apps/workflow-worker/src/ragos_workflow_worker"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
