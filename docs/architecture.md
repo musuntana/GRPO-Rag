@@ -1,6 +1,51 @@
-# RAGOS Architecture v1
+# RagOS Architecture
 
-Last updated: 2026-04-10
+Last updated: 2026-10-09
+
+## 0. 当前目标、实施状态与文档职责
+
+本文件是架构约束与目标形态的主事实源，**不是当前代码全部已实现的清单**。当前源码基线 `d5a2709814b4` 的包注册、TenantContext、ORM、向量契约与训练接线仍未完成；没有前端应用，模型调用为 stub。现状与阶段门槛由 [development-roadmap](development-roadmap.md) 记录。
+
+近期目标是在多租户隔离下完成真实企业文档的 evidence retrieval → rerank → grounded answer → claim/citation verification，并以冻结数据和错误分析指导训练。用户给出的示例指标与竞品材料不作为本项目测量证据。
+
+文档只承担一个职责：[GLOSSARY](../GLOSSARY.md) 定义领域语言；[development-constraints](development-constraints.md) 固定跨层 Interface 与验收；[multi-agent-development](multi-agent-development.md) 定义协作所有权；本文件决定 Module 职责和数据流。[implementation](implementation.md) 是历史实现草图。accepted ADR 是相关决策的解释；2026-10-09 的 ADR-0005/0006/0007 修订同步了范围、页语义和 split 纪律。
+
+### 0.1 领域职责与依赖
+
+| 领域/Module | 所有的业务语义 | 对外 Interface 与禁止事项 |
+|---|---|---|
+| auth / tenant | 可信 actor、成员、resource 权限和派生作用域 | 产生 canonical tenant_ctx；下游不能用 body/header 重新定义身份 |
+| KB ingestion | 文档版本、解析/切块、索引 manifest 与可读版本 | 返回版本化索引状态；原文保留，失败索引不冒充 indexed |
+| retrieval | query plan、候选、fusion/rerank、gate、选定 evidence/citation | 使用显式 profile 与依赖；不持有 HTTP 状态或直接 provider SDK |
+| memory | 用户事实、会话摘要及其有效性/所有权 | 单独 MemoryContext；不把私有记忆混入 KB evidence |
+| model-gateway | provider/profile/binding/key、调用预算与用量 | 唯一模型调用 Interface；不发明第二套 tenant identity |
+| runtime | run/task 编排、取消、checkpoint、事件和副作用协调 | 组装领域 Module，不复制其规则；同一 run 身份贯穿所有输出 |
+| storage / file Adapters | 领域契约到持久化的映射 | 校验范围并遵循明确事务 owner，不持有 UI/runtime 业务编排 |
+| offline training / eval | 数据 split、实验、可加载模型、晋级判断 | 不在请求/入库进程训练；上线推理经 gateway，所有产物带 owner/version |
+| web / API transport | 用户操作、DTO、事件消费与状态呈现 | 复用业务语义，不自行定义权限/证据身份/训练成功 |
+
+依赖从入口/传输 Adapter 到应用 service/runtime，再到领域 Interface 和外部 Adapter。runtime 组装 retrieval、memory、gateway；领域计算用注入依赖，storage 不反向依赖 runtime/HTTP；core 只放基础共享契约。`apps/*` 薄入口，`packages/*` 承担可复用 Implementation，不按 agent 数量建立新服务或空包。
+
+### 0.2 数据流与提交边界
+
+```text
+可信身份 → 资源授权 → canonical tenant_ctx → 应用 service
+  上传 → 不可变 DocumentVersion → 解析/页与元素 → children/parents
+       → 提交 indexing manifest → 幂等 FTS + vector → 对账 → 发布 indexed 版本
+  查询 → 冻结 profile → recall candidates → fusion/rerank → CRAG
+       → parent expansion/预算 → KB Evidence + 单独 MemoryContext
+       → gateway generation → 引用结构验证 + 按 profile 语义验证
+       → 消息、run 状态及事件持久化 → answer/abstention + DTO/events 交付
+       → 单独持久 memory writeback task（完成后才报告 updated）
+  离线 → train mining/SFT/可选GRPO → dev 选型 → frozen holdout 评测
+       → owner/digest/加载/回归校验 → 原子晋级 model profile → gateway serving
+```
+
+PG 是业务记录与版本状态的权威；Qdrant 是受范围约束的向量索引；文件/对象存储保存原文与详细 trace；Valkey 通知不是任务存在的唯一证据。PG 与 vector 分别提交，失败通过 manifest、幂等和对账恢复，不能宣称双写原子。
+
+### 0.3 全阶段交付底线
+
+安全与隔离默认开启；相关功能无法保证身份、预算或隔离时拒绝执行。并发/取消/故障/replay、验证/观测/回滚属于 Interface；前端从真实 RAG 的 S1 起完成最小用户旅程。内部旧契约一次性迁移并删除；持久数据与真实外部消费者另有恢复计划。未达约束的现有代码是待修缺口，不是兼容理由。
 
 ## 1. Executive Summary
 
@@ -182,7 +227,11 @@ Responsibilities:
 - hard resource limits
 - no-network-by-default runtime
 
-Phase 1 ships without Script node support. The sandbox-runner is required before exposing Script nodes to tenants (Phase 2). In Phase 1, the workflow engine recognizes the `Script` node type but returns a "not available on this deployment" error if invoked.
+Script nodes remain unavailable until the S5 sandbox-runner passes the isolation and egress gates. A deployment without that capability returns an explicit unavailable error if invoked; it never falls back to in-process execution.
+
+### 4.6 `train-worker`
+
+Owns bounded offline training/evaluation jobs and immutable artifacts, separate from ingestion and interactive requests. It reconstructs authorized task/data scope, records budget and versions, and registers only handlers it can execute. Dataset preparation or a reward helper does not constitute a working training runtime. Online reranking always uses the model gateway.
 
 ## 5. Tenant Isolation Model
 
@@ -218,6 +267,12 @@ tenant_ctx = {
   trace_id,
 }
 ```
+
+### 5.1.1 派生范围与资源授权
+
+以 [ADR-0005](adr/0005-server-derived-scope-key.md) 为准。身份验证与资源授权分开；host/domain 选择租户还必须验证成员资格，body/query/header 不能授予身份或扩大范围。共享 tenant/workspace/KB 的范围与用户私有 conversation/memory 的范围不同，不能把全 user scope 精确相等套到所有共享数据。
+
+`scope_key` 编码服务端派生的作用域，并显式传递；repository 同时核验 resource owner/ACL，不能只看前缀。worker 从权威 task 记录和服务身份恢复上下文；cache、file、vector、secret、export、replay 采用相应资源范围。缺少范围拒绝，platform 操作走独立权限/审计入口。
 
 ### 5.2 Tenant Resolution Order
 
@@ -350,7 +405,7 @@ Prefer hash partitioning by `tenant_id` for very large tenants and range partiti
 
 ## 6.2 PostgreSQL Full-Text Search
 
-Use PostgreSQL full-text search as the lexical retrieval layer in phase 1:
+Use PostgreSQL full-text search as the initial S1 lexical retrieval layer:
 
 - low operational overhead
 - language-aware parsing and weighting
@@ -378,7 +433,7 @@ Recommended lexical search shape:
 - optional trigram indexes for fuzzy title or slug lookup
 - optional `ts_headline` for snippets in admin and debugger UIs
 
-This is the default first-stage choice. It keeps lexical retrieval inside the primary database while avoiding an extra search cluster in phase 1.
+This is the default first-stage choice. It keeps lexical retrieval inside the primary database while avoiding an extra search cluster in the initial real-RAG path.
 
 ## 6.3 Qdrant
 
@@ -437,7 +492,7 @@ Do not create one collection per tenant.
 
 Default rule:
 
-- one collection per embedding model or retrieval profile
+- one collection per immutable embedding profile and physical tier; retrieval ranking changes do not invent a new collection
 - tenant isolation via payload filters
 
 ### 6.3.2 Tiered Multitenancy Trigger
@@ -454,7 +509,7 @@ Recommended promotion triggers:
 
 Qdrant now supports dense, sparse, hybrid, and reranking pipelines in one engine.
 
-Still, for phase 1 I recommend:
+For the S1 baseline, use:
 
 - lexical retrieval in PostgreSQL FTS
 - dense retrieval in Qdrant
@@ -466,7 +521,7 @@ Reason:
 - easier to debug
 - fewer moving parts for the first commercial version
 
-If evaluation later shows clear gains, phase 2 can move lexical or hybrid fusion deeper into Qdrant.
+Only after a frozen comparison shows useful quality/cost/operational gains should a later stage move lexical or hybrid fusion deeper into Qdrant.
 
 ## 6.4 File and Object Storage
 
@@ -599,7 +654,7 @@ Source Document
 
 ### Contextual Chunking (Anthropic-style)
 
-Before embedding, prepend an LLM-generated document-level context summary to each chunk. This dramatically improves retrieval relevance because the embedding captures both chunk-level detail and document-level meaning.
+Before embedding, the KB/profile default may prepend an LLM-generated document context summary. Preserve the original text and evaluate the enriched representation against an explicitly unenriched baseline; improvement is a hypothesis until measured on this corpus.
 
 Implementation:
 
@@ -615,7 +670,7 @@ This is configurable per KB — cost-sensitive tenants can disable enrichment an
 
 ### Parent-Child Chunk Hierarchy
 
-Use small child chunks (256-512 tokens) for precise retrieval matching, but expand to the parent chunk (1024-2048 tokens) when building the LLM context window.
+Use small child chunks (initial profile budget 256-512 tokens) for retrieval. Under [ADR-0006](adr/0006-page-anchored-retrieval-and-verifiable-citations.md), stable paginated representations use page parents; non-paginated representations use token-window parents (initial budget 1024-2048 tokens). A DOCX needs a frozen rendered version to have stable pages. These budgets are starting configurations, not measured optima.
 
 Implementation:
 
@@ -625,7 +680,11 @@ Implementation:
 - After fusion/rerank, expand selected children to their parents for the generation context
 - Deduplicate overlapping parents
 
-This gives the best balance of retrieval precision and generation context completeness.
+The delivered evidence retains doc_id, immutable document version, page identity when present, chunk identity and span coordinates. Parent expansion obeys a recorded context budget; oversize pages/elements are handled explicitly. Original versus enriched text, document-global versus page-relative offsets must not be conflated. The index version fixes parent_unit rather than each reader re-deriving it.
+
+### 7.4.1 Durable indexing manifest
+
+Persist the indexing plan before writing either index. FTS and Qdrant upserts share deterministic identities but not a transaction. Verify both projections before publishing indexed; partial failure stays recoverable. Reads use only an authorized, published document/index version. Reindex, deletion, ACL revocation and TTL cleanup must cover both stores and caches. Shadow versions allow verified switch and rollback.
 
 ## 8. Retrieval Pipeline
 
@@ -658,7 +717,7 @@ Default to direct retrieval. Enable HyDE and agentic modes per tenant profile or
 
 ### 8.2 Recall Channels
 
-Minimum recall channels:
+Target recall channels (only evaluated, explicitly configured capabilities belong in a serving profile):
 
 1. PostgreSQL FTS (lexical)
 2. Dense vector recall (semantic)
@@ -686,10 +745,11 @@ After reranking and before generation, run a lightweight relevance grading step:
 1. A fast LLM (or the same model with a short prompt) grades whether the top-K retrieved chunks are sufficient to answer the query
 2. Grade categories: `relevant`, `ambiguous`, `irrelevant`
 3. If `relevant` → proceed to generation
-4. If `ambiguous` → re-retrieve with rewritten query, then proceed
-5. If `irrelevant` → fall back to web search or return "I don't have enough information" with high confidence
+4. If `ambiguous` → perform budgeted re-retrieval and re-grade; proceed only when evidence becomes sufficient, otherwise abstain
+5. If `irrelevant` → abstain; an explicitly authorized web recall strategy must produce newly graded evidence before generation
+6. If judge/configuration fails → return a typed failure; do not relabel an outage as irrelevant or silently skip the gate
 
-This is a high-impact, low-cost addition that significantly reduces hallucination from poor retrievals.
+The gate is required before generation; its quality and cost must be evaluated, including false acceptance and false refusal.
 
 ### 8.5 Output Policy
 
@@ -699,6 +759,14 @@ This is a high-impact, low-cost addition that significantly reduces hallucinatio
 - Only pass top `K` evidence chunks into generation (e.g., top 5-8)
 - Expand child chunks to parent chunks for richer context (see 7.4)
 - Keep citations as first-class runtime state — structured, not inline text
+
+### 8.6 Evidence and claim verification
+
+Candidate recall, selected children, expanded parents and the actual generator evidence set have separate traceable identities. Structural citation verification is always on; semantic verification is required in evaluation and enabled online by profile. Structural validity is not semantic support. APIs and UI must disclose unverified/suppressed results rather than presenting all citations as verified. See [ADR-0006](adr/0006-page-anchored-retrieval-and-verifiable-citations.md).
+
+### 8.7 Offline reranker training
+
+Train on audited train labels/negatives, select on dev and evaluate a frozen candidate on independent holdout. SFT is the first trainable deliverable; GRPO is optional and must justify its cost against SFT. Immutable tenant-scoped artifacts are validated, versioned and promoted atomically, then served through the gateway. Training is never an API or ingest-worker activity. See [ADR-0007](adr/0007-per-tenant-offline-reranker-training.md).
 
 ## 9. Workflow Architecture
 
@@ -876,7 +944,7 @@ Avoid turning "anything" into a node type. That makes governance impossible late
 
 ## 10. Streaming and Event Replay
 
-FastAPI now has native SSE support, so the platform can standardize on SSE for chat and debugger streams.
+Standardize chat and debugger delivery on SSE using the HTTP streaming interface supported by the pinned runtime.
 
 Recommended streaming design:
 
@@ -892,7 +960,9 @@ This gives you:
 - reconnect support
 - unified chat and debugging transport
 
-Detailed traces belong in JSONL or object storage, not in PostgreSQL row-by-row token tables.
+Detailed traces belong in JSONL or object storage, not in PostgreSQL row-by-row token tables. Create one durable run_id, reuse it for messages/tasks/cost/logs/UI and replay it without re-running a POST. Event IDs need a single writer or concurrency-safe assignment. Failure/cancellation persists a terminal state and closes the stream. Queues are bounded with backpressure; tenant/session switch unsubscribes and discards stale responses.
+
+The UI must distinguish genuine provider streaming from segmentation of a completed answer. A scheduled memory task is not a memory_updated event. See [front-end constraints](development-constraints.md#7-完整且稳定的前端体验).
 
 ## 11. Tooling and Execution Safety
 
@@ -911,7 +981,7 @@ Implementation:
 
 - Rate limit check runs as FastAPI middleware, after tenant resolution
 - Valkey `INCR` + `EXPIRE` for simple counters; sliding window log for burst-sensitive endpoints
-- LLM token quotas are checked pre-generation and updated post-generation (optimistic with reconciliation)
+- Hard model budgets are authoritatively pre-authorized before dispatch, settled after actual usage, and reconciled on failure; an unavailable ledger fails closed under ADR-0001. Rate limiting is a separate availability policy and cannot weaken identity, budget or sandbox controls.
 
 ### 11.1 HTTP Nodes
 
@@ -1019,7 +1089,11 @@ Version these together as a reproducible experiment bundle:
 - `parser_version`
 - `chunker_version`
 
-Use RAGAS as the default metric framework:
+Evaluate retrieval, ranking, generation, citation and abstention separately before interpreting aggregate answer quality. Gold uses document version plus page/chunk identity, with graded labels, explicit deduplication, cutoff, denominator and metric direction. Freeze dataset/splits, code, index, profiles, model/artifact, prompts, parser/chunker, judge, dependencies, seed and budget/latency definition in each bundle. Missing/empty/NaN metrics or scope/case/version mismatch cannot pass promotion.
+
+Train drives mining, sampling and reward; dev drives selection and thresholds; holdout only judges a frozen candidate for promotion. Do not tune against repeated holdout results. Related training policy is in ADR-0007.
+
+Use RAGAS or calibrated judge metrics to supplement deterministic evidence/gold checks:
 
 - **Faithfulness**: is the answer grounded in the retrieved context?
 - **Answer Relevancy**: does the answer address the question?
@@ -1064,57 +1138,17 @@ Required span attributes:
 
 Trace the full request lifecycle (query → retrieval → rerank → grading → generation) as a single trace with child spans. Export to any OTel-compatible backend (Jaeger, Grafana Tempo, etc.).
 
-Phase 1 can start with structured logging. Phase 2 adds full OTel instrumentation.
+S0 starts with structured correlation/error logging; subsequent vertical slices preserve traceable behavior. S5 adds richer OTel export and operational dashboards without postponing basic observability.
 
 ## 14. Delivery Roadmap
 
-## Phase 1: Sellable Single-Host Foundation
+The authoritative sequence and exit evidence are in [development-roadmap](development-roadmap.md):
 
-Deploy on one host:
+`S0 repair runnable contracts → S1 real RAG → S2 trustworthy eval/identity → S3 SFT → S4 optional GRPO comparison → S5 product/operations`.
 
-- FastAPI
-- workers
-- PostgreSQL
-- Qdrant single node
-- object storage or local disk
-- Valkey/Redis recommended
+Security, resource isolation, basic observability, fault recovery and the relevant UI are cross-stage requirements. S1 includes a real upload/chat/citation journey; S5 adds workflow, sandbox, scheduler and operational depth after the measured evidence path works. Earlier Phase 1/2 feature lists are not proof of a sellable foundation or permission to delay auth/UI.
 
-Ship:
-
-- multi-tenant auth and branding
-- KB ingest with contextual chunking and parent-child hierarchy
-- chat with citations and CRAG relevance gate
-- workflow DSL v1
-- SSE streams
-- three-tier memory (working + buffer + long-term with fact extraction)
-- basic evaluation bundle (RAGAS metrics)
-
-## Phase 2: Operational Hardening
-
-Add:
-
-- sandbox runner
-- better quotas and rate limits
-- richer eval suite
-- Qdrant tiered multitenancy for large tenants
-- object storage lifecycle policies
-- OpenTelemetry and dashboards
-
-## Phase 3: Scale-Out Triggers
-
-Split PostgreSQL responsibilities when one of these becomes true:
-
-- checkpoint writes measurably hurt request-path latency
-- search index maintenance or autovacuum on hot partitions becomes noisy
-- queue-like task mutation volume starts competing with control-plane traffic
-- you need HA, read replicas, or region-specific placement beyond a single primary
-
-At that point:
-
-- move `checkpoint` to a dedicated PostgreSQL database or cluster
-- move `search` to a dedicated PostgreSQL database if lexical indexing becomes operationally heavy
-- add replicas and poolers before introducing more services
-- keep Qdrant and workers unchanged
+Scale-out remains measurement-driven: isolate checkpoint/search databases only when observed maintenance/write load affects request latency or availability/residency requires it. Add poolers/replicas and bounded worker capacity before introducing services. A split requires ownership, data flow, failure and rollback evidence.
 
 ## 15. Proposed Monorepo Layout
 
@@ -1123,6 +1157,7 @@ apps/
   api-server/src/ragos_api/
   workflow-worker/src/ragos_workflow_worker/
   ingest-worker/src/ragos_ingest_worker/
+  train-worker/src/ragos_train_worker/
   scheduler-worker/src/ragos_scheduler_worker/
   sandbox-runner/src/ragos_sandbox_runner/
   web/
@@ -1186,7 +1221,7 @@ This is the highest-leverage architecture for the current product stage:
 
 ## 17. References
 
-Validated against official documentation on 2026-04-10:
+Historical reference list recorded on 2026-04-10; these external pages were not re-verified in the 2026-10-09 governance edit. Verify the pinned runtime documentation before implementing version-dependent APIs:
 
 - [LangGraph Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
 - [LangGraph Durable Execution](https://docs.langchain.com/oss/python/langgraph/durable-execution)

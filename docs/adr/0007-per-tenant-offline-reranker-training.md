@@ -4,6 +4,7 @@
 - **Date:** 2026-10-04
 - **Affects:** `docs/architecture.md` §8.5, §11.0, §12, §13.3
 - **Supersedes:** nothing
+- **Amended:** 2026-10-09 — correct split leakage and stage ordering. Training reward/mining use train; dev selects; frozen holdout judges promotion. Earlier wording that optimized against holdout is invalid and must not be implemented.
 
 ## Context
 
@@ -11,9 +12,9 @@
 
 That ambiguity is the correct default for a system whose whole advantage is measured retrieval quality (§13.3) and whose stated differentiation is that every retrieval change is gated on measured results. Renting a cross-encoder is the right first position: it works, it costs one gateway call, and it requires no training pipeline to maintain.
 
-The problem is that a rented reranker is a constant. Its quality is fixed at whatever the provider shipped, and it cannot be adapted to a tenant's corpus — which is exactly where the headroom is. A reranker trained on a tenant's own enterprise documents, with negatives drawn from that tenant's own confusable pages, sees a decision boundary that no general-purpose model has been trained on. In document-heavy domains the confusable negatives are structural rather than random: Q1 beside Q2, FY24 beside FY25, the summary page beside the detail page it summarizes, a superseded policy version beside the current one. A general cross-encoder has no way to learn those distinctions from a vendor's training mixture.
+The problem is that a rented reranker is a constant. Its quality is fixed at whatever the provider shipped, and it cannot be adapted to a tenant's corpus — which is exactly where the headroom is. A reranker trained on a tenant's own enterprise documents, with negatives drawn from that tenant's own confusable pages, sees a decision boundary that no general-purpose model has been trained on. In document-heavy domains the confusable negatives are structural rather than random: Q1 beside Q2, FY24 beside FY25, the summary page beside the detail page it summarizes, a superseded policy version beside the current one. Whether a general cross-encoder misses these tenant-specific distinctions is an error-analysis hypothesis, not a guarantee; compare its frozen baseline before training.
 
-The survey does not offer evidence against doing this, and one-directional evidence for it: no surveyed platform ships any reranker training or per-tenant retrieval adaptation at all. RAGFlow, the strongest document-ingestion platform in the set, ships rerank and stops there.
+The survey is historical context, not proof that competitors lack a capability or that our implementation has an advantage. The decision must be justified by measured evidence quality on an authorized tenant corpus and by maintainable cost, independent of competitor claims.
 
 Two decisions have to be made, and they are separable:
 
@@ -23,24 +24,24 @@ Two decisions have to be made, and they are separable:
 
 ## Decision
 
-**ragos owns an offline, per-tenant reranker training capability. Its artifact is registered as a `model_profile`, served through the existing gateway, and promoted only through the regression gate.**
+**ragos owns an offline, per-tenant reranker training capability. Its valid, load-tested artifact is registered as a `model_profile`, served through the gateway, and promoted only through the regression gate; the current source does not yet implement this end-to-end capability.**
 
-### 1. Four stages, in order, and the fourth is optional
+### 1. Mine, SFT, optional GRPO, then gated promotion
 
 ```text
-1. mine    hard negatives from the tenant's own eval set + feedback
-2. sft     distilled cross-encoder baseline          -> shippable
+1. mine    audited hard negatives from the tenant's train split + reviewed feedback
+2. sft     cross-encoder supervised baseline          -> candidate
 3. grpo    outcome-reward policy optimization         -> experiment
 4. promote artifact -> model_profile -> registry      -> gated
 ```
 
-**Stage 2 is the deliverable. Stage 3 is an experiment that must beat stage 2 on the eval set to exist.** This mirrors ADR-0004's reasoning: we own the corpus and the eval, we rent nothing we can measure ourselves, and we do not adopt complexity because it is more capable. If GRPO does not beat the SFT baseline on a tenant's eval set, the SFT baseline ships and GRPO stays unused. That outcome is a success for this decision, not a failure of it.
+**Stage 2 is the trainable deliverable. Stage 3 is optional; stage 4 is mandatory for either candidate to be served. GRPO must justify its cost against SFT on an independent frozen evaluation to be promoted.** This mirrors ADR-0004's reasoning: we own the corpus and the eval, we rent nothing we can measure ourselves, and we do not adopt complexity because it is more capable. If GRPO does not beat the SFT baseline under the independent gate, the previously validated baseline remains served and GRPO stays unused. That outcome is a success for this decision, not a failure of it.
 
-### 2. Hard negatives are **ungraded**, not irrelevant
+### 2. Ungraded candidates require review before becoming hard negatives
 
 This is the detail that decides whether the capability helps or quietly hurts.
 
-Mining selects negatives the retriever already scores highly: same-document other pages, adjacent pages, cross-period siblings, retriever-top-ranked-but-ungraded. The resulting negative set is graded `1` (relevant-but-not-answering) more often than graded `0` (irrelevant).
+Mining selects high-scoring candidates from the train split: same-document other pages, adjacent pages, cross-period siblings and retriever-top-ranked-but-ungraded pages. Unknown labels do not mean negative. Audited labels distinguish `1` (relevant-but-not-answering) from `0` (irrelevant); their relative frequency must be measured rather than assumed.
 
 Collapsing that into a binary label is the common failure. A `grade 1` negative is a **harder and more useful** training signal than a `grade 0` negative — it teaches the temporal, entity, and document-structure distinctions that are the entire source of the headroom. But it is also, by definition, partially relevant, and training on it as if it were noise pushes the model toward over-confident rejection. A retriever tuned that way stops returning the summary page when the detail page is also present, which is a regression that will not show up on any metric that only asks "was a relevant page retrieved".
 
@@ -56,7 +57,7 @@ R = alpha * hit_at_k + beta * ndcg_at_k + gamma * hard_negative_demotion
 - `ndcg_at_k` — graded position quality, which is what distinguishes `grade 1` from `grade 2`
 - `hard_negative_demotion` — did the mined negatives end up below the gold
 
-Per-term weights are bounded and recorded. Reward is computed **against frozen gold labels on the holdout split only**, never against the model's own output. A KL penalty to the SFT reference is applied.
+Per-term weights are bounded and recorded. Training reward is computed **against frozen gold labels from the train split only**, never against the model's own output or holdout labels. Dev selects reward weights/hyperparameters; holdout evaluates only a frozen candidate for promotion. A KL penalty to the SFT reference is applied.
 
 ### 4. Reward-hacking guards
 
@@ -65,7 +66,7 @@ Training optimizes a proxy. Four guards, each targeting a specific way the proxy
 - **Gold-only reward.** Never self-reward. A reranker that ranks what it was rewarded for ranking is not evidence of anything.
 - **Holdout-only evaluation.** Split discipline: `dev` drives thresholds and hyperparameters, `holdout` is touched only to decide promotion. Tuning on holdout converts the metric into a report of the tuning.
 - **Cross-metric coupling.** If reward rises while `citation_accuracy` or `abstention_accuracy` falls, promotion is blocked. A reranker that improves ordering by promoting confident-but-wrong pages raises hit rate and lowers attribution quality — the exact failure mode of reward on hit rate alone.
-- **Train-set improvement is a bug, not a result.** A run that improves the eval set it mined from is treated as a failed run until explained.
+- **Train-set improvement is not generalization evidence.** Training improvement is expected; only independent frozen holdout outcomes support promotion. Near-duplicate documents/templates and reused feedback are checked across splits. A holdout used for repeated selection is consumed and cannot remain the untouched benchmark.
 
 ### 5. Isolation and cost
 
@@ -81,15 +82,15 @@ A trained reranker is a `model_profile` with `kind="reranker"` and an artifact r
 
 **Positive**
 
-- Reranker quality becomes a per-tenant asset that improves with the tenant's own data, which is a real differentiator in a market where nothing surveyed ships any training.
-- The pipeline is reusable: the same mined pairs train a future embedding model, and the same eval set grades it.
+- Reranker quality becomes a per-tenant asset that improves with the tenant's own data, which is a potential differentiator only when independent evaluation demonstrates a useful quality/cost gain.
+- The pipeline is reusable: the same mined pairs train a future embedding model, and an independent evaluation split grades it.
 - Owning training means owning the ability to react when a provider deprecates a reranker model, instead of being pinned to whatever is available.
 - GRPO is falsifiable inside our own gate. We can say with evidence whether outcome-reward training helped a given tenant, because we hold both its data and its eval set.
 
 **Negative**
 
 - We own a training loop and its failure modes: seed sensitivity, reward hacking, artifact staleness, and a model that degrades silently as the corpus shifts beneath it.
-- Training compute is a real cost with no direct revenue line attached in Phase 1. It is bounded by explicit budget pre-authorization on the training run.
+- Training compute is a real cost with no guaranteed direct revenue return in the S3/S4 experiments. It is bounded by explicit budget pre-authorization on the training run.
 - Stage 3 may simply not earn its place. That is acceptable and is why it is gated behind stage 2 rather than shipped alongside it.
 - Per-tenant artifacts multiply: N tenants means N models to version, monitor, and re-promote as corpora change. Artifact staleness needs an explicit policy, not an afterthought.
 
@@ -97,7 +98,7 @@ A trained reranker is a `model_profile` with `kind="reranker"` and an artifact r
 
 ## Rejected alternatives
 
-- **No training; rent the reranker permanently.** Rejected: keeps the constant. It is the correct Phase 1 position and it is preserved as stage 2's baseline, but as a terminal decision it forfeits the differentiator that our own survey identifies as the strongest defensible position — retrieval that measurably works, on the customer's data.
+- **No training; rent the reranker permanently.** Rejected: keeps the constant. It is the correct S1 position and is preserved as the S3/S4 baseline. Offline tenant adaptation remains an option only if authorized independent experiments justify it; a model without measured gains is not promoted.
 
 - **A single shared platform reranker trained on pooled data.** Rejected for now: pooling tenant documents into a shared artifact is a data-governance event requiring explicit consent, and it fails the isolation posture in ADR-0005 in spirit even when no individual document leaks — the artifact itself is derived from every participant's data. Revisit only with a consent model.
 
@@ -105,6 +106,6 @@ A trained reranker is a `model_profile` with `kind="reranker"` and an artifact r
 
 - **Training in the request path, or on the ingest worker.** Rejected: it couples a latency-budgeted call to minutes-to-hours of compute, and it puts a mutable model on the same worker that must be reproducible. Same separation argument as ADR-0003.
 
-- **Per-tenant fine-tuning of the *embedding* model rather than the reranker.** Rejected for now: changing the embedding model invalidates the Qdrant collection (§6.3.4 — never mix two embedding models in one collection), so it triggers a reindex and a shadow-collection migration. The reranker is the right first training target precisely because it requires no reindex.
+- **Per-tenant fine-tuning of the *embedding* model rather than the reranker.** Rejected for now: changing the embedding model invalidates the Qdrant collection (§6.3 — collections are pinned to an embedding profile), so it triggers a reindex and a shadow-collection migration. The reranker is the right first training target precisely because it requires no reindex.
 
-- **Training on mined negatives from production traffic rather than the eval set.** Rejected: unlabelled traffic negatives have no gold positive to pair against, and the eval set's graded labels are the only source of the `grade 1` versus `grade 0` distinction the miner depends on. Feedback entries do feed mining, but as candidate negatives to be graded, never as labels.
+- **Training on unreviewed production traffic negatives.** Rejected: unknown labels cannot supply trustworthy positives or graded negatives. Feedback can enter a reviewed, authorized train split after labeling and cross-split leakage checks; it never changes holdout or automatically becomes gold.

@@ -4,6 +4,7 @@
 - **Date:** 2026-10-04
 - **Affects:** `docs/architecture.md` §5.1.1, §5.3.1, §6.3, §9.2.1, §11.4
 - **Supersedes:** nothing
+- **Amended:** 2026-10-09 — clarify shared resource versus private user scopes; preserve server-derived identity.
 
 ## Context
 
@@ -19,23 +20,26 @@ Evidence from the survey:
 
 ## Decision
 
-A single derived value, `scope_key`, scopes every tenant-scoped read and write. It is always produced by trusted server code and stored server-side.
+A canonical `tenant_ctx` establishes trusted identity and resource authorization. `scope_key` is an encoded, server-derived scope identifier reused at subsystem boundaries; it is not itself an authorization grant or a universal exact-equality filter for every resource.
 
-1. **Derive, never accept.** `tenant_id` comes from exactly one authoritative source per entry point: host mapping, custom-domain mapping, or a verified token claim. Never from a request body, query parameter, or unverified header.
-2. **Discard caller-supplied scope.** `tenant_id`, `brand_id`, `kb_id`, `user_id`, and `model_binding_id` in a payload are ignored. Where a payload field is legitimately required, compare it against the derived scope and reject on mismatch rather than trusting it.
-3. **Compose once, reuse everywhere.** `scope_key = {tenant_id}:{workspace_id}:{user_id}`, with `workspace_id` omitted for platform actors. The same value is the basis of the LangGraph `thread_id`, the Qdrant payload filter, the object-storage path prefix, the secret alias namespace, the audit log partition, and the cost ledger.
-4. **Pass it explicitly.** Carried on `tenant_ctx` / `RequestContext` and passed as a required repository parameter. Not read from module-level or ambient state, and not accepted as a function argument a caller may have populated from untrusted input.
-5. **Fail closed.** A missing `scope_key` is a `PermissionDeniedError`, never an unscoped query.
-6. **Derived values that scope identity are also not caller-supplied.** `thread_id`, cache keys, prompt-cache keys, idempotency keys, and waitpoint signal IDs are all derived from `scope_key`. A client that may choose its own identifier can collide with another tenant's namespace.
+1. **Derive, never accept identity.** Tenant selection may originate from host/domain mapping or a verified token, but access requires authenticated membership/role checks. Unverified headers, body and query parameters cannot grant a tenant, actor or role.
+2. **Validate resource references.** KB, document, brand and model-binding IDs may be legitimate request references. Resolve them inside the actor's authorized tenant/workspace and ACL; reject mismatches. A payload `scope_key` or claimed identity is never trusted.
+3. **Distinguish scope granularity.** Shared KB/document/index resources use an authorized tenant/workspace/resource scope. Private conversations/messages/memory additionally require the user owner. A private `scope_key` may encode tenant/workspace/user, but shared evidence must not be filtered as if it were owned only by that querying user.
+4. **Compose once per required scope, pass explicitly.** Trusted code serializes the required scope components without collisions, carries them on `tenant_ctx` and passes them to repositories/adapters. Storage, vector filters, files, secrets, audit and cost records use the scope appropriate to the resource. No feature defines a parallel identity scheme.
+5. **Fail closed and check ownership.** Missing/invalid scope or resource ownership is refused. Checking only a string prefix is insufficient. Same-tenant user isolation and authorized shared reads both require tests.
+6. **Namespace caller request IDs.** Platform-owned run/thread/signal IDs are generated server-side. A client retry key is only an opaque request correlation value; the server namespaces it by authorized scope and operation, binds the payload digest and rejects reuse for different input. It cannot choose another tenant's cache/idempotency namespace.
+7. **Reconstruct workers and replay.** Workers use a service identity and the authoritative task's resource scope, not arbitrary identity in a payload. Resume/replay/export repeat actor/resource authorization. Privileged cross-tenant tasks need an explicit actor type, audit and constrained capability, never a missing tenant.
+
+The LangGraph thread format remains `{tenant_id}:{workflow_id}:{run_id}`; the run's owner/resource scope is checked separately. Future workspace fields are introduced only with their membership model, not invented from request text.
 
 ## Consequences
 
 **Positive**
 
-- Cross-tenant access requires a bug in the resolution logic itself, not a mistake in each of dozens of call sites. The bug class collapses from "every handler" to "one middleware".
+- Centralized identity and ownership policies reduce ad-hoc scope derivation. Each repository/adapter still enforces its resource ACL and required scope; one correct middleware does not excuse an unscoped data path.
 - Required repository parameters make an unscoped query impossible to write by accident, and make the requirement greppable in review and in CI.
-- Because `scope_key` is uniform across storage, retrieval, workflow execution, and secrets, adding a new subsystem cannot accidentally invent a second isolation mechanism.
-- The cross-tenant probe suite (§5.3.1) has a stable thing to assert: one key, every path.
+- Because scope derivation is centralized across storage, retrieval, workflow execution and secrets, each new subsystem must reuse the same ownership policy while retaining the scope granularity its resource needs.
+- The cross-tenant and same-tenant cross-user probes have a stable property to assert: trusted identity, resource ownership and the appropriate required scope on every path.
 
 **Negative**
 

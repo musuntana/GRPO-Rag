@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-04
 - **Affects:** `docs/architecture.md` §6.3, §7.4, §8.5, §8.6, §13.3
+- **Amended:** 2026-10-09 — distinguish stable pagination, structural validity and semantic support; remove an unattributed metric from the design rationale.
 - **Supersedes:** nothing
 
 ## Context
@@ -16,7 +17,7 @@ It degrades on the document classes enterprises actually buy a knowledge base fo
 - **Contracts.** Clause boundaries are legal, not token-counted. A window that merges clause 4.2 and 4.3 produces a chunk that answers a different question than either clause.
 - **Dashboards and chart-heavy reports.** Most of the meaning is visual. A text window over a chart page produces prose describing nothing.
 
-The measured failure of fixed windows is recorded in §7.4 already — a fixed window "splits tables away from their header row and separates headings from the content they introduce, and both failures silently degrade retrieval because the embedded chunk loses its meaning." Page anchoring applies the same principle that §7.4 applies to flat text, one level up.
+Fixed windows can separate table headers or section headings from the content they qualify. This is a design risk to check in parsed artifacts and frozen error analysis, not a measured result of this project. Page anchoring retains source structure one level above children.
 
 The second problem is citations. §7.4 requires `start_char_idx` / `end_char_idx` per chunk and states that "citation linking depends on it." The pipeline emits a `citation_linked` event carrying `{doc_id, chunk_id, text}`. Three things follow from that shape:
 
@@ -26,12 +27,14 @@ The second problem is citations. §7.4 requires `start_char_idx` / `end_char_idx
 
 ## Decision
 
-**The page is the parent unit for paginated sources, and every delivered citation is verified in two layers before it leaves the service.**
+**2026-10-09 clarification.** This decision is a target constraint, not evidence that the current parser/index/citation path is implemented. Stable page identity belongs to an immutable source representation: PDF/PPTX can carry pages, while DOCX needs a frozen rendered representation before assigning page numbers. Plain/Markdown/HTML sources without such a representation use section/token-window context and omit page navigation. Structural verification is always required; semantic support is required offline and profile-gated online. If no semantic check ran, UI/API report unverified support rather than treating structural validity as verified support.
+
+**The page is the parent unit for stably paginated representations. Every delivered citation passes structural verification; semantic support is required in evaluation and explicitly disclosed online according to the profile.**
 
 ### 1. `parent_unit` is recorded, never inferred
 
 ```text
-parent_unit = "page"          # paginated sources: PDF, PPT/PPTX, DOCX
+parent_unit = "page"          # stable representation: PDF, PPT/PPTX, frozen rendered DOCX
 parent_unit = "token_window"  # flat text: Markdown, HTML, plain text, CSV-as-text
 ```
 
@@ -60,9 +63,9 @@ Tables are **linearized to text at parse time** (markdown with the header row bo
 
 `start_char_idx` / `end_char_idx` remain **document-global**, computed with the advancing-cursor rule §7.4 already mandates. Searching from offset zero is still forbidden and still corrupts citations under overlap.
 
-On top of that, every chunk carries `page_no`, `page_offset_start`, and `page_offset_end`. A citation therefore resolves to a precise span *and* a page. The page number is the navigation affordance; the span is the precision guarantee. Neither replaces the other — a page without a span cannot be verified, and a span without a page cannot be presented to a human looking at a PDF.
+On top of that, every chunk from a stably paginated representation carries `page_no`, `page_offset_start`, and `page_offset_end`. A citation therefore resolves to a precise span *and* a page. The page number is the navigation affordance; the span is the precision guarantee. Neither replaces the other — a page without a span cannot be verified, and a span without a page cannot be presented to a human looking at a PDF.
 
-### 4. Citations are verified in two layers before delivery
+### 4. Citations have two verification layers with explicit delivery status
 
 ```text
 generation
@@ -75,12 +78,12 @@ generation
 **Structural** checks, all programmatic, all fail-closed:
 
 - every cited `chunk_id` is present in the evidence set actually delivered to the generator
-- every cited `page_no` is within `[1, page_count]` for that document version
+- every cited `page_no`, when the representation is paginated, is within `[1, page_count]` for that immutable document/representation version
 - spans are within bounds and non-degenerate
 
 **Semantic** checks whether each cited span entails the claim attributed to it, via NLI or an LLM judge. It runs unconditionally in evaluation. Online it is gated on a profile flag because it costs an LLM call per claim, and an unpriced per-claim call on the request path is a cost defect, not a feature.
 
-Both layers must be recoverable from the citation object itself. A citation carries `chunk_id`, `doc_id`, `page_no`, `start_char_idx`, `end_char_idx`, the claim text, and the verification verdict. There is no separate log to join against.
+Both layers must be recoverable from the citation object itself. A citation carries `chunk_id`, `doc_id`, document/representation version, `page_no` when meaningful, span coordinates, claim text and separate structural/semantic verdicts (including not checked). There is no separate log to join against.
 
 ### 5. Verified citations become a scored metric with a denominator
 
@@ -100,22 +103,22 @@ A citation that fails semantic verification is not silently dropped. It is eithe
 **Positive**
 
 - Generation context becomes a semantically complete unit for the document classes enterprises actually use. A financial quarter is answered from its whole page, table header included.
-- Citations are navigable. A user gets a page number and a span, and the span is verified against the claim.
+- Citations are navigable within their immutable source representation. A user gets a valid page or section/span location and can see whether semantic support was checked.
 - Attribution becomes measurable, and therefore regressable — which is what makes it a gate rather than a claim.
 - Layout metadata (`element_type`, `layout_bbox`, `page_image_ref`) captured at parse time is reusable by multimodal retrieval later, without re-parsing.
 
 **Negative**
 
-- A paginated source yields **variable-size parents**. `parent_size` no longer bounds a page parent, so the majority-sibling merge rule in §7.4 has to handle parents of unbounded token length. A dense appendix page can be an order of magnitude larger than a title page, and both are one parent.
+- A paginated source yields **variable-size parents**. `parent_size` no longer bounds a page parent, so the parent-expansion and context-budget policy in §7.4 has to handle parents of unbounded token length. A dense appendix page can be an order of magnitude larger than a title page, and both are one parent.
 - A page with almost no text (a full-bleed chart) produces an empty or near-empty child. Whether such a page is indexed at all is a per-KB decision, because a page with no text cannot be matched lexically and its text representation may be a caption that misleads retrieval.
 - Parsing is materially harder. Layout analysis is now load-bearing for correctness, not a cosmetic improvement to chunk quality. A parser regression now changes retrieval results, where before it only changed chunk text.
-- The `search` schema, the Qdrant payload, `SearchChunkCommon`, the chunker, and the citation type all change. This is the widest-reaching single change in the document set since the v1.1 scope-key revision.
+- The `search` schema, the Qdrant payload, `SearchChunkCommon`, the chunker, and the citation type all change. These mappings must change together with the server-derived scope contract.
 
-**Revisit when.** The variable-parent-size problem becomes materially annoying — that is, when the majority-sibling merge shows a measurable context-quality cost on page parents, or when page-level parents routinely exceed the generation context budget and force truncation mid-page. At that point a page *segment* hierarchy (heading-bounded sections within a page, page as grandparent) is the natural next step, and it composes with this design rather than replacing it.
+**Revisit when.** The variable-parent-size problem becomes materially annoying — that is, when parent expansion shows a measurable context-quality cost on page parents, or when page-level parents routinely exceed the generation context budget and force truncation mid-page. At that point a page *segment* hierarchy (heading-bounded sections within a page, page as grandparent) is the natural next step, and it composes with this design rather than replacing it.
 
 ## Rejected alternatives
 
-- **Page as the sole retrieval unit — one vector per page, no children.** Rejected: it discards the parent-child machinery that §7.4 justifies with measurements (0.778 → 0.897 hit rate from resolving children to parents), and it makes precision worse, because a page is a coarse matching target. The child's role is precisely to be a fine one. The resume-shaped "page-level retrieval" framing is satisfied by page-as-parent: the retrieval *unit delivered to the generator* is the page.
+- **Page as the sole retrieval unit — one vector per page, no children.** Rejected: it discards the parent-child machinery that preserves fine-grained matching separately from complete generation context. A page-only target may lose matching precision; the magnitude must be measured on this project's frozen corpus. Page-as-parent preserves both roles without treating a resume claim as design evidence.
 
 - **Page as parent with fixed-size children that ignore element boundaries.** Rejected: reintroduces exactly the table-splitting failure §7.4 exists to prevent, just at page scope.
 
@@ -125,4 +128,4 @@ A citation that fails semantic verification is not silently dropped. It is eithe
 
 - **Semantic verification as the only layer.** Rejected: it is an LLM call per claim on the request path, so it cannot be the thing that guarantees a citation is well-formed. A hallucinated `chunk_id` must be caught deterministically before it reaches a judge that might be talked into accepting it.
 
-- **Verify citations only in evaluation.** Rejected: that is the status quo and it is the gap. A user receives the same unverified output whether or not an offline run happened to grade it.
+- **Perform all checks only in evaluation.** Rejected: delivered citations always need structural validation. Online semantic verification may be disabled by an evaluated profile, but the user must then receive an explicit not-checked status; offline semantic scores cannot mark an unexamined online claim verified.

@@ -1,10 +1,12 @@
 # RagOS Development Implementation Guide
 
-Last updated: 2026-04-11
+Historical draft: 2026-04-11. Governance notice added: 2026-10-09.
 
-This document translates `docs/architecture.md` into an actionable milestone plan. Each milestone has a clear deliverable, lists the exact packages and files to create, defines key interfaces, and specifies acceptance criteria.
+> 本文件保留旧实现思路及示例，不再决定开发顺序。按 [development-roadmap](development-roadmap.md) 的 S0–S5 和 [development-constraints](development-constraints.md) 执行；[architecture](architecture.md) 是架构约束的主事实源。旧 M0–M10、工期估计、示例代码、命令、勾选与“5 passed”等历史记载都不代表当前 HEAD 可运行或已验收。前端随 S1 起的用户旅程交付；安全隔离从 S0 开始，不能按旧 M9/M10 延后。
 
-Read `docs/architecture.md` for the **why**. This document is the **what and when**.
+This historical draft translated an earlier architecture into an illustrative milestone plan. Each milestone has a clear deliverable, lists the exact packages and files to create, defines key interfaces, and specifies acceptance criteria.
+
+Read `docs/architecture.md` for the architecture and `docs/development-roadmap.md` for the current what and when.
 
 ---
 
