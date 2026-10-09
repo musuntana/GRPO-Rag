@@ -12,16 +12,22 @@ from __future__ import annotations
 
 import asyncio
 import signal
+import sys
+from pathlib import Path
 
 from ragos.core.config import Settings, get_settings
 from ragos.core.logging import configure_logging, get_logger
-from ragos.runtime.ingest import NoopVectorIndexWriter, VectorIndexWriter
 from ragos.runtime.tasks import (
+    TaskCommand,
     TaskHandlerRegistry,
-    make_ingest_document_handler,
     process_one_task,
 )
-from ragos.storage.db import ensure_schemas, get_engine, get_session_factory
+from ragos.storage.db import (
+    ensure_schemas,
+    get_engine,
+    get_session_factory,
+    require_migrated_schema,
+)
 
 LOGGER = get_logger(__name__)
 
@@ -29,25 +35,46 @@ POLL_IDLE_INTERVAL_SECONDS = 2.0
 DEFAULT_LEASE_SECONDS = 900
 
 
-def build_registry(*, vector_writer: VectorIndexWriter | None = None) -> TaskHandlerRegistry:
-    registry = TaskHandlerRegistry()
-    registry.register(
-        "ingest_document",
-        make_ingest_document_handler(vector_writer=vector_writer),
-    )
-    return registry
-
-
-def build_vector_writer(settings: Settings) -> VectorIndexWriter:
+def build_registry(settings: Settings) -> TaskHandlerRegistry:
+    if settings.app_env != "test" or not settings.task_test_embedding:
+        raise RuntimeError("ingest worker unavailable: real gateway embedding is not connected")
     if not settings.qdrant_url:
-        LOGGER.info("RAGOS_QDRANT_URL empty — using NoopVectorIndexWriter")
-        return NoopVectorIndexWriter()
-    from ragos.runtime.vector import QdrantVectorIndexWriter
+        raise RuntimeError("ingest worker requires an explicit vector service")
+    if (settings.embedding_profile, settings.embedding_version) != ("hash-test", "sha256-hash-v1"):
+        raise RuntimeError("test ingest worker requires the frozen hash embedding identity")
+    registry = TaskHandlerRegistry()
+    # Configuration is server-owned. Do not copy ambient env or values from a task payload.
+    environment = {
+        "RAGOS_APP_ENV": "test",
+        "RAGOS_TASK_TEST_EMBEDDING": "true",
+        "RAGOS_PG_DSN": settings.pg_dsn,
+        "RAGOS_QDRANT_URL": settings.qdrant_url,
+        "RAGOS_STORAGE_ROOT": str(Path(settings.storage_root).resolve()),
+        "RAGOS_EMBEDDING_PROFILE": settings.embedding_profile,
+        "RAGOS_EMBEDDING_VERSION": settings.embedding_version,
+    }
 
-    return QdrantVectorIndexWriter(
-        url=settings.qdrant_url,
-        embedding_profile=settings.embedding_profile,
-    )
+    def command(*, task, tenant_ctx):
+        if task.tenant_id != tenant_ctx.tenant_id or task.kind != "ingest_document":
+            raise ValueError("task command scope mismatch")
+        return TaskCommand(
+            (
+                sys.executable,
+                "-m",
+                "ragos.runtime.ingest_job",
+                "--tenant-id",
+                str(task.tenant_id),
+                "--task-id",
+                str(task.id),
+                "--attempt",
+                str(task.attempts),
+            ),
+            environment,
+            replay_safe=True,
+        )
+
+    registry.register("ingest_document", command)
+    return registry
 
 
 async def _poll_loop(
@@ -71,6 +98,7 @@ async def _poll_loop(
                 registry,
                 lease_seconds=lease_seconds,
                 kind="ingest_document",
+                shutdown=stop_event.is_set,
             )
         except Exception:  # noqa: BLE001 — the loop must outlive one bad task
             LOGGER.exception("ingest poll iteration crashed")
@@ -89,8 +117,9 @@ async def _poll_loop(
 async def serve() -> None:
     settings = get_settings()
     configure_logging("INFO")
-
+    registry = build_registry(settings)
     engine = get_engine(settings)
+    require_migrated_schema(engine, settings)
     ensure_schemas(engine, settings)
 
     stop_event = asyncio.Event()
@@ -101,7 +130,6 @@ async def serve() -> None:
         except NotImplementedError:
             pass
 
-    registry = build_registry(vector_writer=build_vector_writer(settings))
     LOGGER.info(
         "ingest worker initialized",
         extra={"registered_kinds": list(registry.kinds)},

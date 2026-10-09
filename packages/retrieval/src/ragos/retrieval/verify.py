@@ -27,6 +27,8 @@ class StructuralVerdict(StrEnum):
     MARKER_OUT_OF_RANGE = "marker_out_of_range"
     PAGE_OUT_OF_RANGE = "page_out_of_range"
     MALFORMED_SPAN = "malformed_span"
+    IDENTITY_MISMATCH = "identity_mismatch"
+    SOURCE_MISMATCH = "source_mismatch"
 
 
 class SemanticVerdict(StrEnum):
@@ -68,16 +70,28 @@ def verify_structural(citation: Citation, evidence: EvidenceSet) -> StructuralRe
     if citation.chunk_id not in evidence.chunk_ids():
         return StructuralResult(StructuralVerdict.UNKNOWN_CHUNK, citation)
 
-    if citation.page_no is not None:
-        page_count = evidence.page_counts.get(citation.doc_id) if citation.doc_id else None
-        if page_count is not None and not (1 <= citation.page_no <= page_count):
+    source = evidence.by_id(citation.chunk_id)
+    identity = citation.source_identity
+    if source is None or identity is None or source.source_identity != identity:
+        return StructuralResult(StructuralVerdict.IDENTITY_MISMATCH, citation)
+    if (citation.chunk_id, citation.doc_id) != (identity.chunk_id, identity.document_id):
+        return StructuralResult(StructuralVerdict.IDENTITY_MISMATCH, citation)
+    if identity.parent_unit == "page":
+        if citation.page_no is None or not 1 <= citation.page_no <= identity.page_count:
             return StructuralResult(StructuralVerdict.PAGE_OUT_OF_RANGE, citation)
+    elif citation.page_no is not None:
+        return StructuralResult(StructuralVerdict.PAGE_OUT_OF_RANGE, citation)
 
-    start = citation.start_char_idx
-    end = citation.end_char_idx
-    if start is not None and end is not None:
-        if start < 0 or end <= start:
-            return StructuralResult(StructuralVerdict.MALFORMED_SPAN, citation)
+    start, end = citation.start_char_idx, citation.end_char_idx
+    if start is None or end is None or not 0 <= start < end <= identity.representation_char_count:
+        return StructuralResult(StructuralVerdict.MALFORMED_SPAN, citation)
+    if (citation.page_no, start, end, citation.text) != (
+        source.page_no,
+        source.start_char_idx,
+        source.end_char_idx,
+        source.source_text,
+    ) or len(citation.text) != end - start:
+        return StructuralResult(StructuralVerdict.SOURCE_MISMATCH, citation)
 
     return StructuralResult(StructuralVerdict.OK, citation)
 
@@ -103,6 +117,7 @@ async def verify_semantic(
             verified.append(citation)
             continue
         verdict = await entailment(citation.claim, citation.text)
+        citation.semantic_verdict = verdict.value
         if verdict == SemanticVerdict.ENTAILED:
             citation.status = CitationStatus.VERIFIED
             citation.status_reason = "entailed"
@@ -132,6 +147,8 @@ async def verify_citations(
     for result in results:
         citation = result.citation
         citation.status = CitationStatus.UNVERIFIED
+        citation.structural_verdict = result.verdict.value
+        citation.semantic_verdict = "not_checked"
         if result.ok:
             survivors.append(citation)
         else:
@@ -154,12 +171,8 @@ def _merge(
     verified: list[Citation],
 ) -> list[Citation]:
     """Reassemble in original order, taking the semantic verdict where one exists."""
-    by_key = {(c.chunk_id, c.marker_index): c for c in verified}
-    out: list[Citation] = []
-    for result in results:
-        key = (result.citation.chunk_id, result.citation.marker_index)
-        out.append(by_key.get(key, result.citation))
-    return out
+    # Semantic checks mutate the same citation objects; keep each distinct claim.
+    return [result.citation for result in results]
 
 
 def results_as_list(results: list[StructuralResult]) -> list[Citation]:
@@ -167,9 +180,7 @@ def results_as_list(results: list[StructuralResult]) -> list[Citation]:
 
 
 def split_by_status(citations: list[Citation]) -> dict[CitationStatus, list[Citation]]:
-    grouped: dict[CitationStatus, list[Citation]] = {
-        status: [] for status in CitationStatus
-    }
+    grouped: dict[CitationStatus, list[Citation]] = {status: [] for status in CitationStatus}
     for citation in citations:
         grouped[citation.status].append(citation)
     return grouped

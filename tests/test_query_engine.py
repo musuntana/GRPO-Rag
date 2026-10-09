@@ -19,6 +19,7 @@ from ragos.core.errors import ValidationError
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.citation import CitationStatus
 from ragos.retrieval.grader import CragThresholds, GateAction, RelevanceGrader
+from ragos.retrieval.identity import EvidenceIdentity
 from ragos.retrieval.pipeline import RAGPipeline
 from ragos.retrieval.query import (
     ContextualRewriter,
@@ -32,10 +33,12 @@ from ragos.retrieval.query import (
 from ragos.retrieval.refine import RefineRequest, SentenceRefiner, deterministic_refine
 from ragos.retrieval.types import RetrieverProfile, ScoredChunk
 
+TEST_TENANT_ID = uuid4()
+
 
 def _ctx() -> TenantContext:
     return TenantContext(
-        tenant_id=uuid4(),
+        tenant_id=TEST_TENANT_ID,
         tenant_slug="acme",
         actor_id="u_1",
         trace_id="trace-1",
@@ -57,8 +60,7 @@ def _complete(reply: str, recorder: list | None = None):
 def test_history_is_truncated_from_the_front() -> None:
     """The follow-up points back at the most recent turn, not the first one."""
     turns = tuple(
-        ConversationTurn(role="user" if i % 2 == 0 else "assistant", text=f"t{i}")
-        for i in range(8)
+        ConversationTurn(role="user" if i % 2 == 0 else "assistant", text=f"t{i}") for i in range(8)
     )
 
     kept = default_history(turns, 4)
@@ -188,8 +190,9 @@ def test_decomposition_splits_on_a_second_intent() -> None:
     engine = QueryEngine(decomposer=Decomposer(_complete(reply)))
     ctx = _ctx()
 
-    plan = asyncio.run(engine.plan("how do I rotate keys and what does rotation cost?", ctx,
-                                   strategy="decompose"))
+    plan = asyncio.run(
+        engine.plan("how do I rotate keys and what does rotation cost?", ctx, strategy="decompose")
+    )
 
     assert plan.sub_queries == ("how do I rotate keys", "what does rotation cost")
     assert plan.queries == plan.sub_queries
@@ -201,8 +204,9 @@ def test_decomposition_is_capped() -> None:
     engine = QueryEngine(decomposer=Decomposer(_complete(reply), max_sub_queries=3))
     ctx = _ctx()
 
-    plan = asyncio.run(engine.plan("a and b and c and d and e and f and g and h and i", ctx,
-                                   strategy="decompose"))
+    plan = asyncio.run(
+        engine.plan("a and b and c and d and e and f and g and h and i", ctx, strategy="decompose")
+    )
 
     assert len(plan.queries) == 3
 
@@ -300,10 +304,23 @@ def test_a_refused_answer_still_carries_a_refined_query() -> None:
 
 
 def _chunk(text: str, *, score: float = 0.9) -> ScoredChunk:
+    chunk_id, doc_id, kb_id = uuid4(), uuid4(), uuid4()
+    identity = EvidenceIdentity(
+        tenant_id=TEST_TENANT_ID,
+        kb_id=kb_id,
+        document_id=doc_id,
+        document_version_id=uuid4(),
+        representation_id=uuid4(),
+        index_id=uuid4(),
+        chunk_id=chunk_id,
+        representation_char_count=100000,
+        parent_unit="page",
+        page_count=40,
+    )
     return ScoredChunk(
-        chunk_id=uuid4(),
-        doc_id=uuid4(),
-        kb_id=None,
+        chunk_id=chunk_id,
+        doc_id=doc_id,
+        kb_id=kb_id,
         text=text,
         score=score,
         channel="dense",
@@ -311,12 +328,14 @@ def _chunk(text: str, *, score: float = 0.9) -> ScoredChunk:
         page_no=18,
         page_count=40,
         start_char_idx=10,
-        end_char_idx=90,
+        end_char_idx=10 + len(text),
+        source_identity=identity,
+        source_text=text,
     )
 
 
 def _profile(**overrides) -> RetrieverProfile:
-    ctx_tenant = uuid4()
+    ctx_tenant = TEST_TENANT_ID
     base = {
         "id": uuid4(),
         "tenant_id": ctx_tenant,

@@ -232,9 +232,7 @@ def test_every_new_app_table_is_created_by_the_migration(model, upgrade) -> None
         ),
     ],
 )
-def test_every_new_table_column_is_created(
-    model, expected_columns: set[str], upgrade
-) -> None:
+def test_every_new_table_column_is_created(model, expected_columns: set[str], upgrade) -> None:
     assert expected_columns <= upgrade.created[model.__tablename__]
 
 
@@ -261,9 +259,7 @@ def test_memory_carries_a_user_dimension() -> None:
 # -- search schema ----------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "model", [SearchChunkStable, SearchChunkHot, SearchMemory]
-)
+@pytest.mark.parametrize("model", [SearchChunkStable, SearchChunkHot, SearchMemory])
 def test_every_search_table_gets_the_page_and_citation_columns(model, upgrade) -> None:
     added = upgrade.added.get(model.__tablename__, set())
 
@@ -283,9 +279,7 @@ def test_every_search_table_gets_the_page_and_citation_columns(model, upgrade) -
     } <= added
 
 
-@pytest.mark.parametrize(
-    "model", [SearchChunkStable, SearchChunkHot, SearchMemory]
-)
+@pytest.mark.parametrize("model", [SearchChunkStable, SearchChunkHot, SearchMemory])
 def test_the_model_declares_every_column_the_migration_adds(model, upgrade) -> None:
     """The reverse direction: a model column no migration creates fails at insert time."""
     added = upgrade.added.get(model.__tablename__, set())
@@ -489,4 +483,4 @@ def test_the_chat_migration_can_be_downgraded() -> None:
 def test_business_tables_are_not_created_in_postgres_by_models() -> None:
     """The `search` schema is for retrieval tables; control plane lives in `app`."""
     for model in (EvalCase, EvalRun, GraderValidation, RerankerArtifact):
-        assert model.__table_args__[-1] == {"schema": "app"}
+        assert model.__table__.schema == "app"

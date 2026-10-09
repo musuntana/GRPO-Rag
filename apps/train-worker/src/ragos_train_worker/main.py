@@ -14,10 +14,14 @@ from ragos.core.config import Settings, get_settings
 from ragos.core.logging import configure_logging, get_logger
 from ragos.runtime.tasks import (
     TaskHandlerRegistry,
-    make_train_reranker_handler,
     process_one_task,
 )
-from ragos.storage.db import ensure_schemas, get_engine, get_session_factory
+from ragos.storage.db import (
+    ensure_schemas,
+    get_engine,
+    get_session_factory,
+    require_migrated_schema,
+)
 
 LOGGER = get_logger(__name__)
 
@@ -26,9 +30,9 @@ DEFAULT_LEASE_SECONDS = 3600
 
 
 def build_registry(*, settings: Settings | None = None) -> TaskHandlerRegistry:
-    registry = TaskHandlerRegistry()
-    registry.register("train_reranker", make_train_reranker_handler())
-    return registry
+    raise NotImplementedError(
+        "Train worker unavailable: no validated training handler is implemented"
+    )
 
 
 async def _poll_loop(
@@ -75,7 +79,10 @@ async def serve() -> None:
     settings = get_settings()
     configure_logging("INFO")
 
+    registry = build_registry(settings=settings)
+
     engine = get_engine(settings)
+    require_migrated_schema(engine, settings)
     ensure_schemas(engine, settings)
 
     stop_event = asyncio.Event()
@@ -86,7 +93,6 @@ async def serve() -> None:
         except NotImplementedError:
             pass
 
-    registry = build_registry(settings=settings)
     LOGGER.info(
         "train worker initialized",
         extra={"registered_kinds": list(registry.kinds)},

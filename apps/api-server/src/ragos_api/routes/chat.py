@@ -29,6 +29,7 @@ from ragos.memory.manager import MemoryManager
 from ragos.model_gateway.router import ModelRouter
 from ragos.retrieval.gateway import GatewayComplete
 from ragos.runtime.chat import ChatDependencies, ChatService
+from ragos.runtime.chat_history import MessageHistoryService
 from ragos.runtime.events import EventLog, EventSink, parse_last_event_id
 from ragos.runtime.retrieval import (
     RetrievalService,
@@ -137,9 +138,7 @@ def _service(
     """
     memory_profile = _require_memory_profile(session, tenant_ctx)
     router = ModelRouter(session)
-    sink = EventSink(
-        EventLog(), scope_key=tenant_ctx.require_scope_key(), run_id=uuid4()
-    )
+    sink = EventSink(EventLog(), scope_key=tenant_ctx.require_private_scope_key(), run_id=uuid4())
 
     return ChatService(
         session=session,
@@ -176,10 +175,10 @@ def create_conversation(
     tenant_ctx: TenantCtx,
 ) -> dict[str, Any]:
     user_id = resolve_user(session, tenant_ctx)
-    tenant_ctx.user_id = user_id
+    tenant_ctx = tenant_ctx.bind_user(user_id)
 
     conversation = ConversationRepository(session=session, tenant_ctx=tenant_ctx).create(
-        scope_key=tenant_ctx.require_scope_key(),
+        scope_key=tenant_ctx.require_private_scope_key(),
         user_id=user_id,
         title=payload.title,
     )
@@ -208,7 +207,7 @@ async def send_message(
     repeats one.
     """
     user_id = resolve_user(session, tenant_ctx)
-    tenant_ctx.user_id = user_id
+    tenant_ctx = tenant_ctx.bind_user(user_id)
 
     service = _service(session=session, tenant_ctx=tenant_ctx, payload=payload)
     # Confirm the conversation belongs to this actor before any model call, so
@@ -216,9 +215,7 @@ async def send_message(
     service.deps.messages.conversations.require_by_id(conversation_id)
 
     async def _produce() -> None:
-        await service.run_turn(
-            conversation_id=conversation_id, user_message=payload.message
-        )
+        await service.run_turn(conversation_id=conversation_id, user_message=payload.message)
         session.commit()
 
     async def _stream():
@@ -240,31 +237,18 @@ async def send_message(
     )
 
 
-@router.get(
-    "/conversations/{conversation_id}/messages", dependencies=[Depends(require_chat_actor)]
-)
+@router.get("/conversations/{conversation_id}/messages", dependencies=[Depends(require_chat_actor)])
 def list_messages(
     conversation_id: UUID,
     session: DBSession,
     tenant_ctx: TenantCtx,
     limit: int = 50,
 ) -> dict[str, Any]:
-    resolve_user(session, tenant_ctx)
-    messages = MessageRepository(session=session, tenant_ctx=tenant_ctx).list_for_conversation(
-        scope_key=tenant_ctx.require_scope_key(), conversation_id=conversation_id, limit=limit
-    )
+    tenant_ctx = tenant_ctx.bind_user(resolve_user(session, tenant_ctx))
     return {
-        "items": [
-            {
-                "message_id": str(m.id),
-                "role": m.role,
-                "content": m.content,
-                "citations": list(m.citations or []),
-                "run_id": str(m.run_id) if m.run_id else None,
-                "created_at": m.created_at.isoformat(),
-            }
-            for m in messages
-        ]
+        "items": MessageHistoryService(session, tenant_ctx).list(
+            conversation_id=conversation_id, limit=limit
+        )
     }
 
 
@@ -281,13 +265,13 @@ def submit_feedback(
     tenant_ctx: TenantCtx,
 ) -> dict[str, Any]:
     user_id = resolve_user(session, tenant_ctx)
-    tenant_ctx.user_id = user_id
+    tenant_ctx = tenant_ctx.bind_user(user_id)
 
     messages = MessageRepository(session=session, tenant_ctx=tenant_ctx)
     message = messages.require_in_conversation(message_id, conversation_id)
 
     entry = FeedbackRepository(session=session, tenant_ctx=tenant_ctx).record(
-        scope_key=tenant_ctx.require_scope_key(),
+        scope_key=tenant_ctx.require_private_scope_key(),
         conversation_id=conversation_id,
         message_id=message_id,
         rating=payload.rating,
@@ -309,18 +293,17 @@ def list_feedback(
     session: DBSession,
     tenant_ctx: TenantCtx,
 ) -> dict[str, Any]:
-    resolve_user(session, tenant_ctx)
+    tenant_ctx = tenant_ctx.bind_user(resolve_user(session, tenant_ctx))
     # Require the message to belong to this conversation first: a message id from
     # another conversation is not this caller's to read feedback on.
     MessageRepository(session=session, tenant_ctx=tenant_ctx).require_in_conversation(
         message_id, conversation_id
     )
     entries = FeedbackRepository(session=session, tenant_ctx=tenant_ctx).list_for_message(
-        scope_key=tenant_ctx.require_scope_key(), message_id=message_id
+        scope_key=tenant_ctx.require_private_scope_key(), message_id=message_id
     )
     return {
         "items": [
-            {"feedback_id": str(e.id), "rating": e.rating, "comment": e.comment}
-            for e in entries
+            {"feedback_id": str(e.id), "rating": e.rating, "comment": e.comment} for e in entries
         ]
     }

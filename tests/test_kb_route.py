@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from ragos.auth.jwt import encode_dev_token
 from ragos.core.errors import ConflictError, NotFoundError
-from ragos.storage.models.app import ChunkManifest, DocumentRecord, KnowledgeBase, Task
+from ragos.storage.models.app import DocumentRecord, KnowledgeBase
 from ragos_api.dependencies import get_db_session
 from ragos_api.main import create_app
 from ragos_api.routes import kb as kb_route
@@ -104,9 +104,7 @@ class _FakeKBRepo:
     def require_by_id(self, kb_id: UUID) -> KnowledgeBase:
         _FakeKBRepo.calls.require_kb_calls.append(kb_id)
         if str(kb_id) == MISSING_ID:
-            raise NotFoundError(
-                "KnowledgeBase not found", resource="KnowledgeBase", id=str(kb_id)
-            )
+            raise NotFoundError("KnowledgeBase not found", resource="KnowledgeBase", id=str(kb_id))
         return KnowledgeBase(
             id=kb_id,
             tenant_id=UUID(TENANT_ID),
@@ -176,78 +174,15 @@ class _FakeDocRepo:
         )
 
 
-class _FakeManifestRepo:
-    calls: _Calls
-
-    def __init__(self, session: Any, tenant_ctx: Any) -> None:
-        self.session = session
-        self.tenant_ctx = tenant_ctx
-
-    def create(self, *, kb_id: UUID, document_id: UUID) -> ChunkManifest:
-        manifest = ChunkManifest(
-            id=uuid4(),
-            tenant_id=UUID(TENANT_ID),
-            kb_id=kb_id,
-            document_id=document_id,
-            chunk_total=0,
-            indexing_state="pending",
-        )
-        _FakeManifestRepo.calls.manifests_created.append(
-            {
-                "id": str(manifest.id),
-                "kb_id": str(kb_id),
-                "document_id": str(document_id),
-            }
-        )
-        return manifest
-
-
-class _FakeTaskRepo:
-    calls: _Calls
-
-    def __init__(self, session: Any, tenant_ctx: Any) -> None:
-        self.session = session
-        self.tenant_ctx = tenant_ctx
-
-    def enqueue(
-        self,
-        *,
-        kind: str,
-        payload: dict[str, Any],
-        idempotency_key: str,
-        available_at: Any = None,
-    ) -> Task:
-        task = Task(
-            id=uuid4(),
-            tenant_id=UUID(TENANT_ID),
-            kind=kind,
-            payload=payload,
-            idempotency_key=idempotency_key,
-        )
-        _FakeTaskRepo.calls.tasks_enqueued.append(
-            {
-                "id": str(task.id),
-                "kind": kind,
-                "payload": payload,
-                "idempotency_key": idempotency_key,
-            }
-        )
-        return task
-
-
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     calls = _Calls()
     _FakeKBRepo.calls = calls
     _FakeKBRepo.conflict_slugs = set()
     _FakeDocRepo.calls = calls
-    _FakeManifestRepo.calls = calls
-    _FakeTaskRepo.calls = calls
 
     monkeypatch.setattr(kb_route, "KnowledgeBaseRepository", _FakeKBRepo)
     monkeypatch.setattr(kb_route, "DocumentRepository", _FakeDocRepo)
-    monkeypatch.setattr(kb_route, "ChunkManifestRepository", _FakeManifestRepo)
-    monkeypatch.setattr(kb_route, "TaskRepository", _FakeTaskRepo)
 
     fake_session = _FakeSession()
 
@@ -356,65 +291,18 @@ def test_kb_route_create_document_missing_kb(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_kb_route_ingest_creates_manifest_and_enqueues_task(client: TestClient) -> None:
-    kb_id = "11111111-1111-1111-1111-111111111111"
-    doc_id = "22222222-2222-2222-2222-222222222222"
-    resp = client.post(
-        f"/tenant/kb/{kb_id}/documents/{doc_id}/ingest",
+def test_kb_route_ingest_refuses_unconnected_indexing_without_creating_a_task(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/tenant/kb/11111111-1111-1111-1111-111111111111/documents/22222222-2222-2222-2222-222222222222/ingest",
         headers=_headers(["tenant_admin"]),
-        json={
-            "tier": "stable",
-            "chunks": [
-                {"body": "hello world", "title": "Intro"},
-                {"body": "second chunk", "layer": "L2"},
-            ],
-        },
+        json={"chunks": [{"body": "input"}]},
     )
-    assert resp.status_code == 202
-    body = resp.json()
-
-    calls: _Calls = client.calls  # type: ignore[attr-defined]
-    assert len(calls.manifests_created) == 1
-    assert len(calls.tasks_enqueued) == 1
-
-    manifest = calls.manifests_created[0]
-    task = calls.tasks_enqueued[0]
-
-    assert manifest["kb_id"] == kb_id
-    assert manifest["document_id"] == doc_id
-
-    assert task["kind"] == "ingest_document"
-    assert task["payload"]["manifest_id"] == manifest["id"]
-    assert task["payload"]["tier"] == "stable"
-    assert len(task["payload"]["chunks"]) == 2
-    # Every chunk is stamped with the URL-provided kb + doc.
-    for chunk in task["payload"]["chunks"]:
-        assert chunk["kb_id"] == kb_id
-        assert chunk["document_id"] == doc_id
-        assert chunk["body"]
-    # Default idempotency_key derives from manifest id.
-    assert task["idempotency_key"] == f"ingest-{manifest['id']}"
-
-    assert body["manifest"]["id"] == manifest["id"]
-    assert body["task_id"] == task["id"]
-
-
-def test_kb_route_ingest_respects_custom_idempotency_key(client: TestClient) -> None:
-    kb_id = "11111111-1111-1111-1111-111111111111"
-    doc_id = "22222222-2222-2222-2222-222222222222"
-    resp = client.post(
-        f"/tenant/kb/{kb_id}/documents/{doc_id}/ingest",
-        headers=_headers(["tenant_admin"]),
-        json={
-            "tier": "hot",
-            "idempotency_key": "batch-2026-04-11-xyz",
-            "chunks": [{"body": "only one"}],
-        },
-    )
-    assert resp.status_code == 202
-    calls: _Calls = client.calls  # type: ignore[attr-defined]
-    assert calls.tasks_enqueued[0]["idempotency_key"] == "batch-2026-04-11-xyz"
-    assert calls.tasks_enqueued[0]["payload"]["tier"] == "hot"
+    assert response.status_code == 422
+    assert "unavailable" in response.json()["error"]["message"]
+    assert client.calls.manifests_created == []
+    assert client.calls.tasks_enqueued == []
 
 
 def test_kb_route_ingest_rejects_missing_document(client: TestClient) -> None:

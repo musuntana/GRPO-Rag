@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import MetaData
+from sqlalchemy import DateTime, MetaData
 from sqlmodel import Field, SQLModel
 
 NAMING_CONVENTION = {
@@ -28,8 +28,12 @@ class UUIDPrimaryKey(SQLModel):
 
 
 class Timestamped(SQLModel):
-    created_at: datetime = Field(default_factory=utc_now, nullable=False)
-    updated_at: datetime = Field(default_factory=utc_now, nullable=False)
+    created_at: datetime = Field(
+        default_factory=utc_now, nullable=False, sa_type=DateTime(timezone=True)
+    )
+    updated_at: datetime = Field(
+        default_factory=utc_now, nullable=False, sa_type=DateTime(timezone=True)
+    )
 
 
 class TenantScoped(SQLModel):

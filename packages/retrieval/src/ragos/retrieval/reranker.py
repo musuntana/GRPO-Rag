@@ -16,15 +16,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from uuid import UUID
 
+from ragos.core.errors import ValidationError
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.types import RetrieverProfile, ScoredChunk
 
 #: Signature of a rerank call. Always reached through the model gateway — a
 #: trained reranker included (ADR-0007), so there is no code path from a
 #: retrieval feature to a model that bypasses the gateway.
-RerankFn = Callable[
-    [str, list[ScoredChunk], TenantContext], Awaitable[list[ScoredChunk]]
-]
+RerankFn = Callable[[str, list[ScoredChunk], TenantContext], Awaitable[list[ScoredChunk]]]
 
 
 @dataclass(slots=True)
@@ -99,6 +98,23 @@ async def rerank(
         )
 
     ranked = await reranker(query, head, tenant_ctx)
+    originals = {c.chunk_id: c for c in head}
+    for candidate in ranked:
+        original = originals.get(candidate.chunk_id)
+        if original is None or (
+            candidate.source_identity,
+            candidate.source_text,
+            candidate.page_no,
+            candidate.start_char_idx,
+            candidate.end_char_idx,
+        ) != (
+            original.source_identity,
+            original.source_text,
+            original.page_no,
+            original.start_char_idx,
+            original.end_char_idx,
+        ):
+            raise ValidationError("reranker changed immutable evidence lineage")
     marked = [
         ScoredChunk(
             chunk_id=c.chunk_id,
@@ -114,6 +130,8 @@ async def rerank(
             start_char_idx=c.start_char_idx,
             end_char_idx=c.end_char_idx,
             element_type=c.element_type,
+            source_identity=c.source_identity,
+            source_text=c.source_text,
             rerank_score=c.score,
         )
         for c in ranked

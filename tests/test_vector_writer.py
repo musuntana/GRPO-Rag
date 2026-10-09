@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import pytest
+from ragos.core.errors import PermissionDeniedError
 from ragos.core.tenant import ActorType, TenantContext
-from ragos.runtime.vector import (
+from ragos.storage.repositories.search import SearchChunkUpsert, SearchTier
+from ragos.storage.vector import (
     HASH_EMBED_DIM,
     QdrantVectorIndexWriter,
     _chunk_payload,
     hash_embed,
 )
-from ragos.storage.repositories.search import SearchChunkUpsert, SearchTier
 
 
 def _upsert(
@@ -25,6 +26,13 @@ def _upsert(
         tenant_id=tenant_id,
         kb_id=uuid4(),
         document_id=uuid4(),
+        document_version_id=uuid4(),
+        representation_id=uuid4(),
+        index_id=uuid4(),
+        start_char_idx=0,
+        end_char_idx=len(body),
+        representation_char_count=100,
+        parent_unit="token_window",
         parent_chunk_id=None,
         layer="L1",
         lang="simple",
@@ -101,7 +109,9 @@ def test_writer_creates_collection_and_writes_points() -> None:
     qdrant = pytest.importorskip("qdrant_client")  # noqa: F841
     tenant_id = uuid4()
     client = _FakeQdrantClient()
-    writer = QdrantVectorIndexWriter(client=client, embedding_dim=HASH_EMBED_DIM)
+    writer = QdrantVectorIndexWriter(
+        allow_test_embedding=True, client=client, embedding_dim=HASH_EMBED_DIM
+    )
 
     writer.upsert(
         tenant_ctx=_ctx(tenant_id),
@@ -111,7 +121,11 @@ def test_writer_creates_collection_and_writes_points() -> None:
 
     assert client.created, "collection should be created on first write"
     name = writer.collection_name(SearchTier.STABLE)
-    assert name == "ragos_stable"
+    from ragos.storage.vector import collection_name
+
+    assert name == collection_name(
+        embedding_profile="hash-test", embedding_version="sha256-hash-v1", tier=SearchTier.STABLE
+    )
     assert client.created[0][0] == name
     assert len(client.upserts) == 1
     assert client.upserts[0][0] == name
@@ -122,7 +136,7 @@ def test_writer_idempotent_upsert_reuses_chunk_id() -> None:
     pytest.importorskip("qdrant_client")
     tenant_id = uuid4()
     client = _FakeQdrantClient()
-    writer = QdrantVectorIndexWriter(client=client)
+    writer = QdrantVectorIndexWriter(allow_test_embedding=True, client=client)
     chunk_id = uuid4()
 
     chunk = _upsert(tenant_id, "alpha", chunk_id=chunk_id)
@@ -132,7 +146,16 @@ def test_writer_idempotent_upsert_reuses_chunk_id() -> None:
     assert len(client.upserts) == 2
     first_id = client.upserts[0][1][0].id
     second_id = client.upserts[1][1][0].id
-    assert first_id == second_id == str(chunk_id)
+    assert (
+        first_id
+        == second_id
+        == str(
+            uuid5(
+                tenant_id,
+                f"hot:enterprise:{chunk.kb_id}:{chunk.document_id}:{chunk.document_version_id}:{chunk.representation_id}:{chunk.index_id}:{chunk_id}",
+            )
+        )
+    )
 
 
 def test_writer_rejects_cross_tenant_chunk() -> None:
@@ -140,9 +163,9 @@ def test_writer_rejects_cross_tenant_chunk() -> None:
     tenant_ctx = _ctx(uuid4())
     other_tenant = uuid4()
     client = _FakeQdrantClient()
-    writer = QdrantVectorIndexWriter(client=client)
+    writer = QdrantVectorIndexWriter(allow_test_embedding=True, client=client)
 
-    with pytest.raises(ValueError, match="tenant_id does not match"):
+    with pytest.raises(PermissionDeniedError, match="tenant_id does not match"):
         writer.upsert(
             tenant_ctx=tenant_ctx,
             tier=SearchTier.STABLE,
@@ -153,7 +176,7 @@ def test_writer_rejects_cross_tenant_chunk() -> None:
 def test_writer_noop_on_empty_chunks() -> None:
     pytest.importorskip("qdrant_client")
     client = _FakeQdrantClient()
-    writer = QdrantVectorIndexWriter(client=client)
+    writer = QdrantVectorIndexWriter(allow_test_embedding=True, client=client)
 
     writer.upsert(tenant_ctx=_ctx(uuid4()), tier=SearchTier.STABLE, chunks=[])
 
@@ -165,7 +188,7 @@ def test_writer_ensure_collection_is_cached() -> None:
     pytest.importorskip("qdrant_client")
     tenant_id = uuid4()
     client = _FakeQdrantClient()
-    writer = QdrantVectorIndexWriter(client=client)
+    writer = QdrantVectorIndexWriter(allow_test_embedding=True, client=client)
 
     writer.upsert(
         tenant_ctx=_ctx(tenant_id),
@@ -192,3 +215,26 @@ def test_chunk_payload_shape_contains_tenant_id_for_filter() -> None:
     assert payload["tenant_id"] == str(tenant_id)
     assert payload["metadata"] == {"k": "v"}
     assert "layer" in payload
+
+
+def test_writer_refuses_implicit_test_embedding_before_opening_client() -> None:
+    with pytest.raises(ValueError, match="real embedding"):
+        QdrantVectorIndexWriter(url="http://not-a-test-server.invalid")
+
+
+def test_writer_refuses_existing_collection_with_a_different_dimension() -> None:
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import Distance, VectorParams
+
+    client = QdrantClient(":memory:")
+    writer = QdrantVectorIndexWriter(client=client, allow_test_embedding=True)
+    client.create_collection(
+        collection_name=writer.collection_name(SearchTier.STABLE),
+        vectors_config=VectorParams(size=3, distance=Distance.COSINE),
+    )
+    tenant_id = uuid4()
+    with pytest.raises(ValueError, match="does not match"):
+        writer.upsert(
+            tenant_ctx=_ctx(tenant_id), tier=SearchTier.STABLE, chunks=[_upsert(tenant_id)]
+        )
+    client.close()

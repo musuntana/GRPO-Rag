@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import pytest
 from ragos.core.errors import ValidationError
@@ -31,6 +31,7 @@ from ragos.retrieval.expander import (
 )
 from ragos.retrieval.fusion import Fusioner, allocate_by_budget, validate_budgets
 from ragos.retrieval.grader import CragThresholds, GateAction, RelevanceGrader
+from ragos.retrieval.identity import EvidenceIdentity
 from ragos.retrieval.pipeline import RAGPipeline, RAGResult
 from ragos.retrieval.reranker import select_evidence
 from ragos.retrieval.types import (
@@ -45,9 +46,39 @@ from ragos.retrieval.verify import SemanticVerdict
 BUDGETS = {"lexical": 0.20, "dense": 0.45, "memory": 0.15, "hot": 0.20}
 
 
+SYNTHETIC_TENANT_ID = UUID("00000000-0000-0000-0000-000000000101")
+
+
+def _synthetic_candidate(**fields) -> ScoredChunk:
+    """Explicit synthetic immutable lineage for unit tests, never production data."""
+    doc = fields.get("doc_id") or uuid4()
+    kb = fields.get("kb_id") or UUID("00000000-0000-0000-0000-000000000102")
+    fields.update(doc_id=doc, kb_id=kb)
+    start = fields.get("start_char_idx") or 0
+    fields.setdefault("start_char_idx", start)
+    fields.setdefault("end_char_idx", start + len(fields["text"]))
+    page = fields.get("page_no")
+    count = fields.get("page_count") or 20
+    fields["page_count"] = count if page is not None else None
+    fields["source_identity"] = EvidenceIdentity(
+        tenant_id=SYNTHETIC_TENANT_ID,
+        kb_id=kb,
+        document_id=doc,
+        document_version_id=uuid5(doc, "synthetic-content"),
+        representation_id=uuid5(doc, "synthetic-representation"),
+        index_id=uuid5(doc, "synthetic-index"),
+        chunk_id=fields["chunk_id"],
+        representation_char_count=100000,
+        parent_unit="page" if page is not None else "token_window",
+        page_count=count if page is not None else None,
+    )
+    fields["source_text"] = fields["text"]
+    return ScoredChunk(**fields)
+
+
 def _ctx() -> TenantContext:
     return TenantContext(
-        tenant_id=uuid4(),
+        tenant_id=SYNTHETIC_TENANT_ID,
         tenant_slug="acme",
         actor_id="u_1",
         trace_id="trace-1",
@@ -63,7 +94,7 @@ def _chunk(
     doc: UUID | None = None,
     parent: UUID | None = None,
 ) -> ScoredChunk:
-    return ScoredChunk(
+    return _synthetic_candidate(
         chunk_id=uuid4(),
         doc_id=doc or uuid4(),
         kb_id=uuid4(),
@@ -158,7 +189,7 @@ def test_rrf_is_the_default_and_is_scale_independent() -> None:
     """
     agreed_id = uuid4()
     agreed = _chunk("agreed", score=0.4)
-    agreed_dense = ScoredChunk(
+    agreed_dense = _synthetic_candidate(
         chunk_id=agreed_id,
         doc_id=agreed.doc_id,
         kb_id=agreed.kb_id,
@@ -167,7 +198,7 @@ def test_rrf_is_the_default_and_is_scale_independent() -> None:
         channel="dense",
         page_no=18,
     )
-    agreed_lexical = ScoredChunk(
+    agreed_lexical = _synthetic_candidate(
         chunk_id=agreed_id,
         doc_id=agreed.doc_id,
         kb_id=agreed.kb_id,
@@ -225,7 +256,7 @@ def test_majority_sibling_merge_emits_a_parent_once() -> None:
     parent_id = uuid4()
     siblings = [uuid4() for _ in range(3)]
     selected = [
-        ScoredChunk(
+        _synthetic_candidate(
             chunk_id=cid,
             doc_id=uuid4(),
             kb_id=uuid4(),
@@ -236,7 +267,7 @@ def test_majority_sibling_merge_emits_a_parent_once() -> None:
         )
         for cid in siblings[:2]
     ]
-    parent = ScoredChunk(
+    parent = _synthetic_candidate(
         chunk_id=parent_id,
         doc_id=selected[0].doc_id,
         kb_id=selected[0].kb_id,
@@ -257,7 +288,7 @@ def test_majority_sibling_merge_emits_a_parent_once() -> None:
 def test_a_minority_of_children_does_not_emit_the_parent() -> None:
     parent_id = uuid4()
     siblings = [uuid4() for _ in range(4)]
-    one_child = ScoredChunk(
+    one_child = _synthetic_candidate(
         chunk_id=siblings[0],
         doc_id=uuid4(),
         kb_id=uuid4(),
@@ -329,9 +360,11 @@ def _run(
     async def generator(_q, _e, _c):
         return answer
 
-    grader = RelevanceGrader(
-        judge=_judge(grades or [3, 1]), thresholds=CragThresholds()
-    ) if grades is not None else None
+    grader = (
+        RelevanceGrader(judge=_judge(grades or [3, 1]), thresholds=CragThresholds())
+        if grades is not None
+        else None
+    )
 
     profile = _profile(**(profile_overrides or {}))
     profile.tenant_id = ctx.tenant_id
@@ -432,11 +465,21 @@ def test_evidence_set_exposes_the_delivered_chunks() -> None:
 
 
 def _case(split: str) -> EvalCase:
+    source = _chunk("synthetic labelled evidence")
     return EvalCase(
         id=uuid4(),
-        tenant_id=uuid4(),
+        tenant_id=SYNTHETIC_TENANT_ID,
         question="q",
-        gold_evidence=[GoldEvidence(doc_id="doc-18", grade=3)],
+        gold_evidence=[
+            GoldEvidence(
+                doc_id=source.doc_id,
+                grade=3,
+                page_no=source.page_no,
+                chunk_id=source.chunk_id,
+                span=(source.start_char_idx, source.end_char_idx),
+                source_identity=source.source_identity,
+            )
+        ],
         supported_claims=["a claim"],
         split=split,
     )
@@ -455,9 +498,9 @@ def _outcome(case: EvalCase, bundle) -> CaseOutcome:
     return CaseOutcome(
         case_id=case.id,
         split=case.split,
-        retrieved=[Grade("doc-18", 3)],
+        retrieved=[Grade(str(case.gold_evidence[0].doc_id), 3, case.gold_evidence[0].page_no)],
         evidence_hit=True,
-        answer="a",
+        answer="a claim [1].",
         correct=True,
         generated_citations=1,
         supported_citations=1,
@@ -582,7 +625,7 @@ def test_an_unvalidated_grader_reports_as_unacceptable() -> None:
 
 def test_pipeline_refuses_an_empty_scope_key() -> None:
     ctx = _ctx()
-    ctx.scope_key = ""
+    ctx = ctx.model_copy(update={"tenant_id": None})
 
     async def recall(_q, _p, _c):
         return []

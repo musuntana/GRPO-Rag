@@ -29,9 +29,9 @@ RATINGS = ("up", "down")
 
 class ConversationRepository(TenantRepository[Conversation]):
     def __init__(self, session: Session, tenant_ctx: TenantContext) -> None:
-        tenant_ctx.require_scope_key()
+        tenant_ctx.require_private_scope_key()
         super().__init__(session=session, tenant_ctx=tenant_ctx, model_type=Conversation)
-        self.scope_key = tenant_ctx.scope_key
+        self.scope_key = tenant_ctx.require_private_scope_key()
 
     def _require_scope_key(self, scope_key: str) -> None:
         if not scope_key:
@@ -47,6 +47,8 @@ class ConversationRepository(TenantRepository[Conversation]):
 
     def create(self, *, scope_key: str, user_id: UUID, title: str | None = None) -> Conversation:
         self._require_scope_key(scope_key)
+        if user_id != self.tenant_ctx.require_user_id():
+            raise PermissionDeniedError("conversation owner does not match")
         conversation = Conversation(
             tenant_id=self.tenant_ctx.tenant_id,
             external_user_id=str(user_id),
@@ -83,9 +85,9 @@ class ConversationRepository(TenantRepository[Conversation]):
 
 class MessageRepository(TenantRepository[MessageIndex]):
     def __init__(self, session: Session, tenant_ctx: TenantContext) -> None:
-        tenant_ctx.require_scope_key()
+        tenant_ctx.require_private_scope_key()
         super().__init__(session=session, tenant_ctx=tenant_ctx, model_type=MessageIndex)
-        self.scope_key = tenant_ctx.scope_key
+        self.scope_key = tenant_ctx.require_private_scope_key()
         self.conversations = ConversationRepository(session, tenant_ctx)
 
     def _require_scope_key(self, scope_key: str) -> None:
@@ -161,9 +163,9 @@ class MessageRepository(TenantRepository[MessageIndex]):
 
 class FeedbackRepository(TenantRepository[FeedbackEntry]):
     def __init__(self, session: Session, tenant_ctx: TenantContext) -> None:
-        tenant_ctx.require_scope_key()
+        tenant_ctx.require_private_scope_key()
         super().__init__(session=session, tenant_ctx=tenant_ctx, model_type=FeedbackEntry)
-        self.scope_key = tenant_ctx.scope_key
+        self.scope_key = tenant_ctx.require_private_scope_key()
 
     def _require_scope_key(self, scope_key: str) -> None:
         if not scope_key:
@@ -197,11 +199,12 @@ class FeedbackRepository(TenantRepository[FeedbackEntry]):
         """
         self._require_scope_key(scope_key)
         if rating not in RATINGS:
-            raise ConflictError(
-                "Unsupported rating", rating=rating, supported=list(RATINGS)
-            )
+            raise ConflictError("Unsupported rating", rating=rating, supported=list(RATINGS))
 
         owner = user_id or self.tenant_ctx.require_user_id()
+        ConversationRepository(self.session, self.tenant_ctx).require_by_id(conversation_id)
+        if owner != self.tenant_ctx.require_user_id():
+            raise PermissionDeniedError("feedback owner does not match")
         statement = (
             self.scoped_statement()
             .where(FeedbackEntry.message_id == message_id)
@@ -235,21 +238,18 @@ class FeedbackRepository(TenantRepository[FeedbackEntry]):
         self.session.refresh(entry)
         return entry
 
-    def list_for_message(
-        self, *, scope_key: str, message_id: UUID
-    ) -> list[FeedbackEntry]:
+    def list_for_message(self, *, scope_key: str, message_id: UUID) -> list[FeedbackEntry]:
         self._require_scope_key(scope_key)
         statement = (
             self.scoped_statement()
             .where(FeedbackEntry.message_id == message_id)
+            .where(FeedbackEntry.user_id == self.tenant_ctx.require_user_id())
             .order_by(FeedbackEntry.created_at)
         )
         return list(self.session.exec(statement).all())
 
 
-def recent_turns(
-    messages: list[MessageIndex], *, limit: int
-) -> list[tuple[str, int, str]]:
+def recent_turns(messages: list[MessageIndex], *, limit: int) -> list[tuple[str, int, str]]:
     """Project stored messages into ``(role, index, text)`` for the summarizer."""
     return [
         (m.role, idx, m.content)

@@ -20,4 +20,15 @@ class SearchService:
         kb_ids: list[UUID] | None = None,
         layer: str | None = None,
     ) -> list[SearchHit]:
-        return self.repo.search(tier=tier, query=query, limit=limit, kb_ids=kb_ids, layer=layer)
+        return self.repo.search(
+            scope_key=(
+                self.repo.tenant_ctx.require_private_scope_key()
+                if tier == SearchTier.MEMORY
+                else self.repo.tenant_ctx.require_scope_key()
+            ),
+            tier=tier,
+            query=query,
+            limit=limit,
+            kb_ids=kb_ids,
+            layer=layer,
+        )

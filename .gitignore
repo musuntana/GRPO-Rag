@@ -8,3 +8,6 @@ __pycache__/
 .env
 data/
 ragos.egg-info/
+
+# Standard wheel build output
+build/

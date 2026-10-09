@@ -1,0 +1,105 @@
+........................................................................ [  9%]
+........................................................................ [ 18%]
+........................................................................ [ 27%]
+........................................................................ [ 37%]
+........................................................................ [ 46%]
+........................................................................ [ 55%]
+........................................................................ [ 65%]
+........................................................................ [ 74%]
+........................................................................ [ 83%]
+........................................................................ [ 92%]
+............F.....F....................................                  [100%]
+=================================== FAILURES ===================================
+_________ test_an_unknown_element_type_is_rejected_rather_than_indexed _________
+
+    def test_an_unknown_element_type_is_rejected_rather_than_indexed() -> None:
+        from ragos.storage.repositories.search import SearchRepository, SearchTier
+    
+        ctx = _ctx()
+        repo = SearchRepository(session=None, tenant_ctx=ctx)
+    
+        with pytest.raises(ValidationError, match="element_type"):
+>           repo.upsert_chunks(
+                tier=SearchTier.STABLE,
+                chunks=[_chunk(ctx.tenant_id, element_type="spreadsheet-vibes")],
+            )
+
+tests/test_tenant_isolation_probes.py:188: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/tmp/ragos-s0-c5-locked/lib/python3.12/site-packages/ragos/storage/repositories/search.py:119: in upsert_chunks
+    self._validate_enterprise_batch(model, chunks)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ragos.storage.repositories.search.SearchRepository object at 0x789047b216d0>
+model = <class 'ragos.storage.models.search.SearchChunkStable'>
+chunks = [SearchChunkUpsert(id=UUID('807ac672-4eac-48ed-a4a3-18135f09377e'), tenant_id=UUID('fb471004-2c47-4ca8-86bd-f4b8d7bd7d...'), index_id=UUID('32ecb6f1-2273-4644-a8ee-f832a90c45b6'), representation_char_count=1000, parent_unit='token_window')]
+
+    def _validate_enterprise_batch(self, model, chunks: list[SearchChunkUpsert]) -> None:
+        manifests = {}
+        for chunk in sorted(chunks, key=lambda item: str(item.index_id)):
+            if chunk.tenant_id != self.tenant_ctx.tenant_id:
+                raise PermissionDeniedError("chunk tenant does not match")
+            if any(
+                value is None
+                for value in (
+                    chunk.kb_id,
+                    chunk.document_id,
+                    chunk.document_version_id,
+                    chunk.representation_id,
+                    chunk.index_id,
+                )
+            ):
+                raise ValidationError(
+                    "New enterprise chunks require complete immutable source identity"
+                )
+            if chunk.user_id is not None:
+                raise ValidationError("Enterprise evidence cannot carry a private memory owner")
+            if chunk.index_id not in manifests:
+>               manifest = self.session.exec(
+                           ^^^^^^^^^^^^^^^^^
+                    select(ChunkManifest)
+                    .where(ChunkManifest.tenant_id == self.tenant_ctx.tenant_id)
+                    .where(ChunkManifest.id == chunk.index_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                ).first()
+E               AttributeError: 'NoneType' object has no attribute 'exec'
+
+/tmp/ragos-s0-c5-locked/lib/python3.12/site-packages/ragos/storage/repositories/search.py:244: AttributeError
+_________________ test_no_channel_is_left_without_a_predicate __________________
+
+    def test_no_channel_is_left_without_a_predicate() -> None:
+        spec = build_filter_spec(
+            f"tenant/{uuid4()}",
+            kb_ids=[uuid4()],
+            layers=["L3"],
+            element_types=["table"],
+            is_parent=False,
+            min_updated_at=1,
+        )
+    
+>       assert spec.keys() == {
+            "tenant_id",
+            "kb_id",
+            "layer",
+            "element_type",
+            "is_parent",
+            "updated_at",
+            "document_version_id",
+            "representation_id",
+            "index_id",
+            "chunk_id",
+            "representation_char_count",
+            "parent_unit",
+        }
+E       AssertionError: assert {'chunk_id', ..._parent', ...} == {'chunk_id', ... 'kb_id', ...}
+E         
+E         Extra items in the left set:
+E         'doc_id'
+E         Use -v to get more diff
+
+tests/test_tenant_isolation_probes.py:242: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_tenant_isolation_probes.py::test_an_unknown_element_type_is_rejected_rather_than_indexed
+FAILED tests/test_tenant_isolation_probes.py::test_no_channel_is_left_without_a_predicate
+2 failed, 773 passed in 18.71s

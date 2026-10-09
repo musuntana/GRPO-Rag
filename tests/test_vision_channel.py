@@ -21,8 +21,8 @@ from ragos.retrieval.recall.vision import (
     vision_payload,
 )
 from ragos.retrieval.types import RetrieverProfile
-from ragos.runtime.vector import QdrantVectorIndexWriter, build_filter_spec
 from ragos.storage.repositories.search import SearchTier
+from ragos.storage.vector import QdrantVectorIndexWriter, build_filter_spec
 
 
 def test_admitting_the_vision_channel_keeps_the_sum_at_one() -> None:
@@ -86,12 +86,11 @@ def test_vision_recall_declines_when_the_profile_has_no_vision_budget() -> None:
 
     from ragos.retrieval.recall.vision import VisionRecall
 
-    ctx = TenantContext(
-        tenant_id=uuid4(), tenant_slug="acme", actor_id="u", trace_id="t"
+    ctx = TenantContext(tenant_id=uuid4(), tenant_slug="acme", actor_id="u", trace_id="t")
+    recall = VisionRecall(
+        client=object(),
+        profile=VisionProfile(profile_id="vp", collection="c", embed=lambda _: [0.0], enabled=True),
     )
-    recall = VisionRecall(client=object(), profile=VisionProfile(
-        profile_id="vp", collection="c", embed=lambda _: [0.0], enabled=True
-    ))
     profile = RetrieverProfile(
         id=uuid4(),
         tenant_id=ctx.tenant_id,
@@ -99,7 +98,8 @@ def test_vision_recall_declines_when_the_profile_has_no_vision_budget() -> None:
         channel_budgets={"dense": 1.0},
     )
 
-    assert asyncio.run(recall.recall("q", ctx, profile)) == []
+    with pytest.raises(ValidationError, match="authoritative representation hydration"):
+        asyncio.run(recall.recall("q", ctx, profile))
 
 
 def test_vision_recall_returns_nothing_when_disabled() -> None:
@@ -107,12 +107,13 @@ def test_vision_recall_returns_nothing_when_disabled() -> None:
 
     from ragos.retrieval.recall.vision import VisionRecall
 
-    ctx = TenantContext(
-        tenant_id=uuid4(), tenant_slug="acme", actor_id="u", trace_id="t"
+    ctx = TenantContext(tenant_id=uuid4(), tenant_slug="acme", actor_id="u", trace_id="t")
+    recall = VisionRecall(
+        client=object(),
+        profile=VisionProfile(
+            profile_id="vp", collection="c", embed=lambda _: [0.0], enabled=False
+        ),
     )
-    recall = VisionRecall(client=object(), profile=VisionProfile(
-        profile_id="vp", collection="c", embed=lambda _: [0.0], enabled=False
-    ))
     profile = RetrieverProfile(
         id=uuid4(),
         tenant_id=ctx.tenant_id,
@@ -142,7 +143,7 @@ def test_the_vision_payload_carries_the_tenant() -> None:
 
 
 def test_the_vision_collection_is_distinct_from_the_text_collection() -> None:
-    writer = QdrantVectorIndexWriter(client=object(), embedding_dim=64)
+    writer = QdrantVectorIndexWriter(allow_test_embedding=True, client=object(), embedding_dim=64)
 
     text_collection = writer.collection_name(SearchTier.STABLE)
     vision_collection = writer.vision_collection_name("siglip_base")
@@ -152,7 +153,7 @@ def test_the_vision_collection_is_distinct_from_the_text_collection() -> None:
 
 
 def test_a_vision_filter_still_requires_the_tenant_predicate() -> None:
-    spec = build_filter_spec(f"{uuid4()}:ws:u")
+    spec = build_filter_spec(f"tenant/{uuid4()}")
 
     assert spec.must[0].key == "tenant_id"
 

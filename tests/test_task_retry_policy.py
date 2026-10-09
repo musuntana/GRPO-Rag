@@ -24,7 +24,8 @@ def _task(attempts: int) -> Task:
         idempotency_key=f"idem-{uuid4()}",
         attempts=attempts,
         status="leased",
-        lease_until=utc_now(),
+        lease_until=utc_now() + timedelta(seconds=60),
+        deadline_at=utc_now() + timedelta(seconds=300),
         created_at=utc_now(),
         updated_at=utc_now(),
     )
@@ -84,8 +85,8 @@ def test_apply_failure_backoff_grows_with_attempts() -> None:
     task_b = _task(attempts=3)
     now = utc_now()
 
-    _apply_failure(task_a, retryable=True, max_attempts=10)
-    _apply_failure(task_b, retryable=True, max_attempts=10)
+    _apply_failure(task_a, retryable=True, max_attempts=DEFAULT_MAX_ATTEMPTS)
+    _apply_failure(task_b, retryable=True, max_attempts=DEFAULT_MAX_ATTEMPTS)
 
     assert task_a.available_at is not None
     assert task_b.available_at is not None
@@ -102,3 +103,27 @@ def test_non_retryable_never_sets_available_at() -> None:
     _apply_failure(task, retryable=False, max_attempts=DEFAULT_MAX_ATTEMPTS)
 
     assert task.available_at == original_available
+
+
+@pytest.mark.parametrize("status,attempts", [("completed", 1), ("leased", 2), ("failed", 1)])
+def test_superseded_claim_cannot_complete(status: str, attempts: int) -> None:
+    from ragos.core.errors import ConflictError
+    from ragos.storage.repositories.tasks import _require_claim
+
+    task = _task(attempts=attempts)
+    task.status = status
+    with pytest.raises(ConflictError):
+        _require_claim(task, expected_attempts=1)
+
+
+def test_expired_leased_claim_is_eligible_and_unknown_kind_filtered() -> None:
+    from ragos.storage.repositories.tasks import _claim_statement
+    from sqlalchemy.dialects import postgresql
+
+    statement = _claim_statement(kind=None, kinds=("ingest_document",), now=utc_now())
+    sql = str(
+        statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    assert "app.task.status = 'leased'" in sql
+    assert "app.task.kind IN ('ingest_document')" in sql
+    assert "SKIP LOCKED" in sql

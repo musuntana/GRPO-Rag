@@ -1,0 +1,32 @@
+name: S0 installation and storage contracts
+on: [push, pull_request]
+jobs:
+  local-contracts:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: local-validation-only
+          POSTGRES_DB: ragos_s0
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      RAGOS_APP_ENV: test
+      RAGOS_QDRANT_URL: ""
+      RAGOS_PG_DSN: postgresql://postgres:local-validation-only@127.0.0.1:5432/ragos_s0
+      RAGOS_TEST_PG_DSN: postgresql+psycopg://postgres:local-validation-only@127.0.0.1:5432/ragos_s0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install uv==0.12.23
+      - run: uv sync --frozen --no-editable --extra dev --python 3.12
+      - run: .venv/bin/ruff check apps packages tests scripts infra/migrations/env.py infra/migrations/versions/0009_fail_closed_rls.py infra/migrations/versions/0010_immutable_evidence_lineage.py infra/migrations/versions/0011_index_reconciliation.py infra/migrations/versions/0012_task_execution_lifecycle.py
+      - run: .venv/bin/alembic upgrade head
+      - run: .venv/bin/pytest -q
+      - run: .venv/bin/python scripts/verify_s0_processes.py
+      - run: .venv/bin/alembic check

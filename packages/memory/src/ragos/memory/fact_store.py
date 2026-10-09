@@ -44,10 +44,10 @@ class MemoryFactStore:
         *,
         policy: DecayPolicy | None = None,
     ) -> None:
-        tenant_ctx.require_scope_key()
+        tenant_ctx.require_private_scope_key()
         self.session = session
         self.tenant_ctx = tenant_ctx
-        self.scope_key = tenant_ctx.scope_key
+        self.scope_key = tenant_ctx.require_private_scope_key()
         self.policy = policy or DecayPolicy()
 
     # -- scope --------------------------------------------------------------
@@ -71,6 +71,8 @@ class MemoryFactStore:
                 "read to without one",
                 tenant_id=str(self.tenant_ctx.tenant_id),
             )
+        if user_id != self.tenant_ctx.require_user_id():
+            raise PermissionDeniedError("memory user_id does not match resolved owner")
         return user_id
 
     def _actor_scoped(self, user_id: UUID):

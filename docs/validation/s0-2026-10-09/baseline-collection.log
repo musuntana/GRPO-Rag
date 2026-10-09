@@ -1,0 +1,336 @@
+tests/test_domain_resolver.py::test_resolver_uses_x_tenant_id_header
+tests/test_domain_resolver.py::test_resolver_uses_x_tenant_slug_header
+tests/test_domain_resolver.py::test_resolver_uses_jwt_claim_when_no_header
+tests/test_domain_resolver.py::test_resolver_header_overrides_jwt
+tests/test_domain_resolver.py::test_resolver_raises_when_no_identifier
+tests/test_domain_resolver.py::test_resolver_falls_back_to_slug_from_jwt_when_no_header_slug
+tests/test_domain_resolver.py::test_domain_resolution_derives_tenant_from_host_header
+tests/test_domain_resolver.py::test_domain_resolution_requires_verified_domain
+tests/test_domain_resolver.py::test_domain_resolution_not_called_when_x_tenant_id_present
+tests/test_errors.py::test_error_subclasses_map_to_http_status[AuthenticationError-401-AUTHENTICATION_REQUIRED]
+tests/test_errors.py::test_error_subclasses_map_to_http_status[PermissionDeniedError-403-PERMISSION_DENIED]
+tests/test_errors.py::test_error_subclasses_map_to_http_status[NotFoundError-404-NOT_FOUND]
+tests/test_errors.py::test_error_subclasses_map_to_http_status[ConflictError-409-CONFLICT]
+tests/test_errors.py::test_error_subclasses_map_to_http_status[ValidationError-422-VALIDATION_ERROR]
+tests/test_errors.py::test_error_subclasses_map_to_http_status[QuotaExceededError-429-QUOTA_EXCEEDED]
+tests/test_errors.py::test_error_subclasses_map_to_http_status[SandboxError-500-SANDBOX_ERROR]
+tests/test_errors.py::test_error_subclasses_map_to_http_status[ProviderError-502-PROVIDER_ERROR]
+tests/test_errors.py::test_error_subclasses_map_to_http_status[TimeoutError-504-TIMEOUT]
+tests/test_errors.py::test_error_response_shape_includes_details
+tests/test_event_log.py::test_runs_are_stored_under_the_scope_key
+tests/test_event_log.py::test_two_scope_keys_never_share_a_directory
+tests/test_event_log.py::test_an_unscoped_run_has_no_path
+tests/test_event_log.py::test_event_ids_are_monotonic_and_start_at_one
+tests/test_event_log.py::test_ids_are_per_run_not_global
+tests/test_event_log.py::test_an_event_is_on_disk_before_it_is_delivered
+tests/test_event_log.py::test_a_reconnect_replays_only_what_was_missed
+tests/test_event_log.py::test_a_torn_final_line_does_not_break_replay
+tests/test_event_log.py::test_an_oversized_payload_is_offloaded_and_referenced
+tests/test_event_log.py::test_a_small_payload_stays_inline
+tests/test_event_log.py::test_an_offloaded_reference_may_not_escape_the_run_directory
+tests/test_event_log.py::test_the_inline_cap_is_a_module_constant
+tests/test_event_log.py::test_an_event_renders_with_an_id_and_a_type
+tests/test_event_log.py::test_a_last_event_id_cursor_is_parsed
+tests/test_event_log.py::test_an_unusable_cursor_replays_the_whole_run[None]
+tests/test_event_log.py::test_an_unusable_cursor_replays_the_whole_run[]
+tests/test_event_log.py::test_an_unusable_cursor_replays_the_whole_run[abc]
+tests/test_event_log.py::test_an_unusable_cursor_replays_the_whole_run[-1]
+tests/test_event_log.py::test_a_stream_that_starts_late_replays_before_following_live_events
+tests/test_event_log.py::test_resuming_from_a_cursor_skips_the_acknowledged_prefix
+tests/test_event_log.py::test_an_empty_event_name_is_rendered_verbatim
+tests/test_event_log.py::test_two_sinks_on_one_run_continue_the_same_id_sequence
+tests/test_ingest_handler.py::test_decode_chunk_upsert_fixes_tenant_id
+tests/test_ingest_handler.py::test_ingest_document_handler_invokes_service_without_opening_tx
+tests/test_ingest_handler.py::test_ingest_document_handler_raises_on_missing_manifest_id
+tests/test_kb_route.py::test_kb_route_rejects_unauthenticated
+tests/test_kb_route.py::test_kb_route_rejects_non_tenant_admin
+tests/test_kb_route.py::test_kb_route_list_returns_items
+tests/test_kb_route.py::test_kb_route_create_kb
+tests/test_kb_route.py::test_kb_route_create_kb_conflict
+tests/test_kb_route.py::test_kb_route_get_missing
+tests/test_kb_route.py::test_kb_route_create_document_validates_kb
+tests/test_kb_route.py::test_kb_route_create_document_missing_kb
+tests/test_kb_route.py::test_kb_route_ingest_creates_manifest_and_enqueues_task
+tests/test_kb_route.py::test_kb_route_ingest_respects_custom_idempotency_key
+tests/test_kb_route.py::test_kb_route_ingest_rejects_missing_document
+tests/test_kb_route.py::test_kb_route_ingest_requires_at_least_one_chunk
+tests/test_middleware.py::test_tenant_route_requires_authentication_and_returns_request_id
+tests/test_middleware.py::test_tenant_route_requires_tenant_admin_role
+tests/test_middleware.py::test_tenant_route_resolves_context_from_middleware
+tests/test_model_bindings_route.py::test_bindings_rejects_unauthenticated
+tests/test_model_bindings_route.py::test_bindings_rejects_non_tenant_admin
+tests/test_model_bindings_route.py::test_upsert_binding
+tests/test_model_bindings_route.py::test_list_bindings
+tests/test_model_bindings_route.py::test_delete_binding
+tests/test_model_center_route.py::test_model_center_rejects_unauthenticated
+tests/test_model_center_route.py::test_model_center_rejects_non_platform_admin
+tests/test_model_center_route.py::test_list_providers
+tests/test_model_center_route.py::test_create_provider
+tests/test_model_center_route.py::test_create_provider_conflict
+tests/test_model_center_route.py::test_list_key_pools
+tests/test_model_center_route.py::test_create_key_pool
+tests/test_model_center_route.py::test_create_profile
+tests/test_model_center_route.py::test_list_profiles
+tests/test_model_gateway.py::test_stub_provider_chat_returns_empty
+tests/test_model_gateway.py::test_stub_provider_embed_returns_zeros
+tests/test_model_gateway.py::test_stub_provider_rerank_returns_all
+tests/test_model_gateway.py::test_stub_provider_health
+tests/test_model_gateway.py::test_key_pool_weights_round_robin
+tests/test_model_gateway.py::test_key_pool_empty_raises
+tests/test_model_gateway.py::test_key_pool_release_success
+tests/test_model_gateway.py::test_key_pool_release_increments_failures
+tests/test_model_gateway.py::test_model_router_resolve_chat_route
+tests/test_model_gateway.py::test_model_router_chat_returns_stub_result
+tests/test_model_gateway.py::test_model_router_embed_returns_stub_result
+tests/test_platform_route.py::test_platform_route_rejects_unauthenticated
+tests/test_platform_route.py::test_platform_route_rejects_non_platform_admin
+tests/test_platform_route.py::test_platform_route_does_not_require_tenant_header
+tests/test_platform_route.py::test_platform_route_create_tenant
+tests/test_platform_route.py::test_platform_route_create_conflict
+tests/test_platform_route.py::test_platform_route_get_missing
+tests/test_platform_route.py::test_platform_route_deactivate
+tests/test_platform_user_route.py::test_platform_user_route_rejects_unauthenticated
+tests/test_platform_user_route.py::test_platform_user_route_rejects_non_platform_admin
+tests/test_platform_user_route.py::test_platform_user_route_list
+tests/test_platform_user_route.py::test_platform_user_route_create
+tests/test_platform_user_route.py::test_platform_user_route_create_conflict
+tests/test_platform_user_route.py::test_platform_user_route_get_not_found
+tests/test_platform_user_route.py::test_platform_user_route_deactivate
+tests/test_rls_middleware.py::test_tenant_route_sets_rls_tenant_id_on_state
+tests/test_rls_middleware.py::test_public_endpoint_no_auth
+tests/test_task_dispatcher.py::test_registry_register_and_resolve
+tests/test_task_dispatcher.py::test_log_only_handler_noop
+tests/test_task_dispatcher.py::test_process_one_task_returns_false_when_claim_empty
+tests/test_task_dispatcher.py::test_process_one_task_dispatches_claimed_ref
+tests/test_task_dispatcher.py::test_execute_claimed_missing_handler_marks_failed
+tests/test_task_retry_policy.py::test_compute_retry_delay_exponential_with_cap[1-5]
+tests/test_task_retry_policy.py::test_compute_retry_delay_exponential_with_cap[2-10]
+tests/test_task_retry_policy.py::test_compute_retry_delay_exponential_with_cap[3-20]
+tests/test_task_retry_policy.py::test_compute_retry_delay_exponential_with_cap[10-300]
+tests/test_task_retry_policy.py::test_compute_retry_delay_exponential_with_cap[0-5]
+tests/test_task_retry_policy.py::test_apply_failure_retryable_pushes_available_at_forward
+tests/test_task_retry_policy.py::test_apply_failure_demotes_to_failed_after_cap
+tests/test_task_retry_policy.py::test_apply_failure_non_retryable_immediately_fails
+tests/test_task_retry_policy.py::test_apply_failure_backoff_grows_with_attempts
+tests/test_task_retry_policy.py::test_non_retryable_never_sets_available_at
+tests/test_tenant_context.py::test_tenant_context_builds_thread_id
+tests/test_tenant_context.py::test_checkpoint_dsn_sets_search_path_option
+tests/test_user_route.py::test_user_route_rejects_unauthenticated
+tests/test_user_route.py::test_user_route_rejects_non_tenant_admin
+tests/test_user_route.py::test_user_route_list_returns_items
+tests/test_user_route.py::test_user_route_create
+tests/test_user_route.py::test_user_route_create_conflict
+tests/test_user_route.py::test_user_route_get_not_found
+tests/test_user_route.py::test_user_route_deactivate
+tests/test_vector_writer.py::test_hash_embed_is_deterministic
+tests/test_vector_writer.py::test_hash_embed_differs_by_input
+tests/test_vector_writer.py::test_hash_embed_is_unit_length
+tests/test_vector_writer.py::test_writer_creates_collection_and_writes_points
+tests/test_vector_writer.py::test_writer_idempotent_upsert_reuses_chunk_id
+tests/test_vector_writer.py::test_writer_rejects_cross_tenant_chunk
+tests/test_vector_writer.py::test_writer_noop_on_empty_chunks
+tests/test_vector_writer.py::test_writer_ensure_collection_is_cached
+tests/test_vector_writer.py::test_chunk_payload_shape_contains_tenant_id_for_filter
+
+==================================== ERRORS ====================================
+__________________ ERROR collecting tests/test_chat_routes.py __________________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_chat_routes.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_chat_routes.py:18: in <module>
+    from ragos.retrieval.citation import Citation, CitationStatus
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+_________________ ERROR collecting tests/test_chat_service.py __________________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_chat_service.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_chat_service.py:23: in <module>
+    from ragos.retrieval.citation import Citation, CitationStatus
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+________________ ERROR collecting tests/test_citation_verify.py ________________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_citation_verify.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_citation_verify.py:14: in <module>
+    from ragos.retrieval.citation import Citation, CitationStatus, EvidenceSet, bind_markers
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+_________________ ERROR collecting tests/test_dense_recall.py __________________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_dense_recall.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_dense_recall.py:22: in <module>
+    from ragos.retrieval.gateway import GatewayEmbedder
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+_________________ ERROR collecting tests/test_memory_facts.py __________________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_memory_facts.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_memory_facts.py:22: in <module>
+    from ragos.memory.decay import (
+E   ModuleNotFoundError: No module named 'ragos.memory'
+________________ ERROR collecting tests/test_memory_manager.py _________________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_memory_manager.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_memory_manager.py:22: in <module>
+    from ragos.memory.manager import MEMORY_WRITEBACK, MemoryManager
+E   ModuleNotFoundError: No module named 'ragos.memory'
+_____________ ERROR collecting tests/test_memory_summarization.py ______________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_memory_summarization.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_memory_summarization.py:22: in <module>
+    from ragos.memory.rerank import mmr, rank_by_graph_distance, rank_by_mention, rank_facts
+E   ModuleNotFoundError: No module named 'ragos.memory'
+__________ ERROR collecting tests/test_migration_model_consistency.py __________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_migration_model_consistency.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_model_consistency.py:19: in <module>
+    from ragos.storage.models.app import (
+E   ImportError: cannot import name 'EvalCase' from 'ragos.storage.models.app' (/tmp/ragos-s0-venv/lib/python3.12/site-packages/ragos/storage/models/app.py)
+________________ ERROR collecting tests/test_page_anchoring.py _________________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_page_anchoring.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_page_anchoring.py:12: in <module>
+    from ragos.retrieval.parse.layout import (
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+_______________ ERROR collecting tests/test_parent_expansion.py ________________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_parent_expansion.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_parent_expansion.py:19: in <module>
+    from ragos.retrieval.pipeline import RAGPipeline
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+_________________ ERROR collecting tests/test_query_engine.py __________________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_query_engine.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_query_engine.py:20: in <module>
+    from ragos.retrieval.citation import CitationStatus
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+_______________ ERROR collecting tests/test_reranker_training.py _______________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_reranker_training.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_reranker_training.py:14: in <module>
+    from ragos.retrieval.metrics import Grade
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+_______________ ERROR collecting tests/test_retrieval_metrics.py _______________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_retrieval_metrics.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_retrieval_metrics.py:16: in <module>
+    from ragos.retrieval.metrics import (
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+______________ ERROR collecting tests/test_retrieval_pipeline.py _______________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_retrieval_pipeline.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_retrieval_pipeline.py:18: in <module>
+    from ragos.retrieval.citation import CitationStatus, EvidenceSet
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+_______________ ERROR collecting tests/test_retrieval_routes.py ________________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_retrieval_routes.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_retrieval_routes.py:19: in <module>
+    from ragos.retrieval.citation import Citation, CitationStatus
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+_______________ ERROR collecting tests/test_retriever_profile.py _______________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_retriever_profile.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_retriever_profile.py:19: in <module>
+    from ragos.retrieval.profile import latest_by_profile, profile_from_row
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+____________ ERROR collecting tests/test_tenant_isolation_probes.py ____________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_tenant_isolation_probes.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_tenant_isolation_probes.py:14: in <module>
+    from ragos.core.tenant import ActorType, TenantContext, build_scope_key
+E   ImportError: cannot import name 'build_scope_key' from 'ragos.core.tenant' (/tmp/ragos-s0-venv/lib/python3.12/site-packages/ragos/core/tenant.py)
+________________ ERROR collecting tests/test_vision_channel.py _________________
+ImportError while importing test module '/home/avaarg/GRPO-Rag/tests/test_vision_channel.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_vision_channel.py:15: in <module>
+    from ragos.retrieval.recall.vision import (
+E   ModuleNotFoundError: No module named 'ragos.retrieval'
+=========================== short test summary info ============================
+ERROR tests/test_chat_routes.py
+ERROR tests/test_chat_service.py
+ERROR tests/test_citation_verify.py
+ERROR tests/test_dense_recall.py
+ERROR tests/test_memory_facts.py
+ERROR tests/test_memory_manager.py
+ERROR tests/test_memory_summarization.py
+ERROR tests/test_migration_model_consistency.py
+ERROR tests/test_page_anchoring.py
+ERROR tests/test_parent_expansion.py
+ERROR tests/test_query_engine.py
+ERROR tests/test_reranker_training.py
+ERROR tests/test_retrieval_metrics.py
+ERROR tests/test_retrieval_pipeline.py
+ERROR tests/test_retrieval_routes.py
+ERROR tests/test_retriever_profile.py
+ERROR tests/test_tenant_isolation_probes.py
+ERROR tests/test_vision_channel.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 18 errors during collection !!!!!!!!!!!!!!!!!!!
+133 tests collected, 18 errors in 1.48s

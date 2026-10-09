@@ -107,9 +107,24 @@ def dedupe_overlapping_parents(parents: Sequence[ScoredChunk]) -> list[ScoredChu
     out: list[ScoredChunk] = []
     for parent in parents:
         if parent.page_no is not None:
-            key = (parent.doc_id, "page", parent.page_no)
+            key = (
+                parent.source_identity.representation_id
+                if parent.source_identity
+                else parent.doc_id,
+                parent.source_identity.index_id if parent.source_identity else None,
+                "page",
+                parent.page_no,
+            )
         else:
-            key = (parent.doc_id, "span", parent.start_char_idx, parent.end_char_idx)
+            key = (
+                parent.source_identity.representation_id
+                if parent.source_identity
+                else parent.doc_id,
+                parent.source_identity.index_id if parent.source_identity else None,
+                "span",
+                parent.start_char_idx,
+                parent.end_char_idx,
+            )
         if key in seen:
             continue
         seen.add(key)

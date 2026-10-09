@@ -7,13 +7,13 @@ worse than no probe, so each test names the failure it is defending against.
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
-from ragos.core.errors import PermissionDeniedError
-from ragos.core.tenant import ActorType, TenantContext, build_scope_key
-from ragos.runtime.vector import build_filter, build_filter_spec
+from ragos.core.errors import PermissionDeniedError, ValidationError
+from ragos.core.tenant import TenantContext, build_scope_key
 from ragos.storage.repositories.search import SearchChunkUpsert
+from ragos.storage.vector import build_filter, build_filter_spec
 
 
 def _ctx(**overrides) -> TenantContext:
@@ -46,56 +46,53 @@ def _chunk(tenant_id, **overrides) -> SearchChunkUpsert:
         "updated_at": datetime.now(UTC),
     }
     fields.update(overrides)
+    fields.update(
+        document_version_id=uuid4(),
+        representation_id=uuid4(),
+        index_id=uuid4(),
+        representation_char_count=1000,
+        parent_unit="token_window",
+        start_char_idx=0,
+        end_char_idx=len(fields["body"]),
+    )
     return SearchChunkUpsert(**fields)
 
 
 # -- scope key composition --------------------------------------------------
 
 
-def test_scope_key_is_composed_once_on_the_context() -> None:
-    ctx = _ctx(workspace_id=uuid4())
-
-    assert ctx.scope_key.startswith(str(ctx.tenant_id))
-    assert ctx.scope_key.endswith(":u_1")
-
-
-def test_platform_actors_get_the_platform_workspace_marker() -> None:
-    ctx = _ctx(actor_type=ActorType.PLATFORM_ADMIN)
-
-    assert ctx.scope_key == f"{ctx.tenant_id}:platform:u_1"
-
-
-def test_a_platform_actor_and_a_workspace_less_tenant_actor_never_share_a_key() -> None:
-    """A tenant actor with no workspace must not collide with a platform actor.
-
-    Both would otherwise produce ``{tenant}::{user}`` — two different identities
-    sharing one scope key, which is precisely what this value prevents.
-    """
+def test_scope_key_is_derived_and_shared_within_a_tenant() -> None:
     tenant = uuid4()
-    platform = build_scope_key(
-        tenant_id=tenant, workspace_id=None, user_id="u", actor_type=ActorType.PLATFORM_ADMIN
+    first = _ctx(tenant_id=tenant, actor_id="u_1")
+    second = _ctx(tenant_id=tenant, actor_id="u_2")
+    assert first.scope_key == second.scope_key == f"tenant/{tenant}"
+    assert first.require_private_scope_key() != second.require_private_scope_key()
+
+
+def test_scope_key_cannot_be_supplied_or_overwritten() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        _ctx(scope_key=f"tenant/{uuid4()}")
+    with pytest.raises(ValidationError):
+        _ctx().scope_key = ""
+
+
+def test_scope_encoding_separates_actors_with_reserved_characters() -> None:
+    tenant = uuid4()
+    assert build_scope_key(tenant_id=tenant, actor_id="a/b") != build_scope_key(
+        tenant_id=tenant, actor_id="a%2Fb"
     )
-    tenant_form = build_scope_key(
-        tenant_id=tenant, workspace_id=None, user_id="u", actor_type=ActorType.END_USER
-    )
-
-    assert platform != tenant_form
-    assert platform.split(":")[1] == "platform"
 
 
-def test_require_scope_key_fails_closed() -> None:
-    ctx = _ctx()
-    ctx.scope_key = ""
-
+def test_require_scope_key_fails_closed_for_invalid_identity() -> None:
     with pytest.raises(PermissionDeniedError, match="unscoped"):
-        ctx.require_scope_key()
+        build_scope_key(tenant_id=None)
 
 
-def test_thread_id_derivation_refuses_a_context_with_no_scope_key() -> None:
-    ctx = _ctx()
-    ctx.scope_key = ""
-
-    with pytest.raises(PermissionDeniedError, match="thread id"):
+def test_thread_id_derivation_refuses_a_context_with_no_tenant() -> None:
+    ctx = _ctx().model_copy(update={"tenant_id": None})
+    with pytest.raises(PermissionDeniedError, match="unscoped"):
         ctx.build_thread_id("wf", "run")
 
 
@@ -106,10 +103,9 @@ def test_search_repository_refuses_construction_without_a_scope_key() -> None:
     """The repository is built with a validated identity or not at all."""
     from ragos.storage.repositories.search import SearchRepository
 
-    ctx = _ctx()
-    ctx.scope_key = ""
+    ctx = _ctx().model_copy(update={"tenant_id": None})
 
-    with pytest.raises(PermissionDeniedError, match="scope_key"):
+    with pytest.raises(PermissionDeniedError, match="unscoped"):
         SearchRepository(session=None, tenant_ctx=ctx)
 
 
@@ -124,7 +120,7 @@ def test_search_refuses_a_foreign_scope_key() -> None:
         repo.search(
             tier=SearchTier.STABLE,
             query="revenue",
-            scope_key=f"{uuid4()}:ws:u",
+            scope_key=f"tenant/{uuid4()}",
         )
 
 
@@ -143,10 +139,9 @@ def test_the_retriever_profile_repository_refuses_construction_without_a_scope_k
     one would hand tenant A the retrieval behaviour of tenant B."""
     from ragos.storage.repositories.retriever import RetrieverProfileRepository
 
-    ctx = _ctx()
-    ctx.scope_key = ""
+    ctx = _ctx().model_copy(update={"tenant_id": None})
 
-    with pytest.raises(PermissionDeniedError, match="scope_key"):
+    with pytest.raises(PermissionDeniedError, match="unscoped"):
         RetrieverProfileRepository(session=None, tenant_ctx=ctx)
 
 
@@ -157,7 +152,7 @@ def test_the_retriever_profile_repository_refuses_a_foreign_scope_key() -> None:
     repo = RetrieverProfileRepository(session=None, tenant_ctx=ctx)
 
     with pytest.raises(PermissionDeniedError, match="does not match"):
-        repo.require_latest_version(scope_key=f"{uuid4()}::u_1", profile_id=uuid4())
+        repo.require_latest_version(scope_key=f"tenant/{uuid4()}", profile_id=uuid4())
 
 
 def test_the_retriever_profile_repository_refuses_an_empty_scope_key() -> None:
@@ -176,7 +171,7 @@ def test_upsert_for_another_tenant_is_denied_not_rewritten() -> None:
     ctx = _ctx()
     repo = SearchRepository(session=None, tenant_ctx=ctx)
 
-    with pytest.raises(PermissionDeniedError, match="other than the resolved scope"):
+    with pytest.raises(PermissionDeniedError, match="tenant does not match"):
         repo.upsert_chunks(
             tier=SearchTier.STABLE,
             chunks=[_chunk(uuid4())],
@@ -189,7 +184,7 @@ def test_an_unknown_element_type_is_rejected_rather_than_indexed() -> None:
     ctx = _ctx()
     repo = SearchRepository(session=None, tenant_ctx=ctx)
 
-    with pytest.raises(ValueError, match="element_type"):
+    with pytest.raises(ValidationError, match="element_type"):
         repo.upsert_chunks(
             tier=SearchTier.STABLE,
             chunks=[_chunk(ctx.tenant_id, element_type="spreadsheet-vibes")],
@@ -212,21 +207,21 @@ def test_the_filter_builder_rejects_a_malformed_scope_key() -> None:
 
 def test_the_tenant_predicate_is_always_present_and_first() -> None:
     """A filter without the tenant predicate is a cross-tenant read."""
-    spec = build_filter_spec(f"{uuid4()}:ws:u")
+    spec = build_filter_spec(f"tenant/{uuid4()}")
 
     assert spec.must[0].key == "tenant_id"
-    assert spec.must[0].value == spec.must[0].value  # concrete value, not a wildcard
+    assert UUID(spec.must[0].value)  # A concrete tenant UUID, never a wildcard.
 
 
 def test_the_tenant_predicate_carries_the_tenant_segment_of_the_scope_key() -> None:
     tenant = uuid4()
-    spec = build_filter_spec(f"{tenant}:ws:u")
+    spec = build_filter_spec(f"tenant/{tenant}")
 
     assert spec.must[0].value == str(tenant)
 
 
 def test_a_brandless_document_stays_visible_to_every_brand() -> None:
-    spec = build_filter_spec(f"{uuid4()}:ws:u", brand_ids=[uuid4()])
+    spec = build_filter_spec(f"tenant/{uuid4()}", brand_ids=[uuid4()])
 
     # An OR including brand_id = null, so a brandless document is not filtered
     # out of a branded query.
@@ -236,7 +231,7 @@ def test_a_brandless_document_stays_visible_to_every_brand() -> None:
 
 def test_no_channel_is_left_without_a_predicate() -> None:
     spec = build_filter_spec(
-        f"{uuid4()}:ws:u",
+        f"tenant/{uuid4()}",
         kb_ids=[uuid4()],
         layers=["L3"],
         element_types=["table"],
@@ -251,13 +246,20 @@ def test_no_channel_is_left_without_a_predicate() -> None:
         "element_type",
         "is_parent",
         "updated_at",
+        "document_version_id",
+        "doc_id",
+        "representation_id",
+        "index_id",
+        "chunk_id",
+        "representation_char_count",
+        "parent_unit",
     }
 
 
 def test_the_tenant_predicate_survives_every_optional_predicate() -> None:
     """Whatever else is filtered, tenant_id is still conjunctive."""
     spec = build_filter_spec(
-        f"{uuid4()}:ws:u",
+        f"tenant/{uuid4()}",
         kb_ids=[uuid4()],
         brand_ids=[uuid4()],
         layers=["L1", "L2"],
@@ -275,7 +277,7 @@ def test_build_filter_adapts_the_spec_to_the_client_library() -> None:
     pytest.importorskip("qdrant_client")
     from qdrant_client.models import Filter
 
-    qdrant_filter = build_filter(f"{uuid4()}:ws:u", brand_ids=[uuid4()])
+    qdrant_filter = build_filter(f"tenant/{uuid4()}", brand_ids=[uuid4()])
 
     assert isinstance(qdrant_filter, Filter)
     assert qdrant_filter.must is not None
@@ -288,10 +290,10 @@ def test_build_filter_adapts_the_spec_to_the_client_library() -> None:
 
 def test_vector_upsert_denies_a_foreign_tenant_chunk() -> None:
     pytest.importorskip("qdrant_client")
-    from ragos.runtime.vector import QdrantVectorIndexWriter
+    from ragos.storage.vector import QdrantVectorIndexWriter
 
     ctx = _ctx()
-    writer = QdrantVectorIndexWriter(client=object(), embedding_dim=64)
+    writer = QdrantVectorIndexWriter(allow_test_embedding=True, client=object(), embedding_dim=64)
 
     class _NoCollections:
         @staticmethod
@@ -309,10 +311,10 @@ def test_vector_upsert_denies_a_foreign_tenant_chunk() -> None:
 
 def test_collections_are_named_per_embedding_profile_not_per_tenant() -> None:
     """One collection per embedding model, never one per tenant."""
-    from ragos.runtime.vector import QdrantVectorIndexWriter
+    from ragos.storage.vector import QdrantVectorIndexWriter
 
     writer = QdrantVectorIndexWriter(
-        client=object(), embedding_dim=64, embedding_profile="bge_m3"
+        allow_test_embedding=True, client=object(), embedding_dim=64, embedding_profile="bge_m3"
     )
     name = writer.collection_name(_stable_tier())
 
@@ -322,9 +324,9 @@ def test_collections_are_named_per_embedding_profile_not_per_tenant() -> None:
 
 def test_the_vision_collection_is_separate_from_the_text_collection() -> None:
     """Two embedding models in one collection make every distance meaningless."""
-    from ragos.runtime.vector import QdrantVectorIndexWriter
+    from ragos.storage.vector import QdrantVectorIndexWriter
 
-    writer = QdrantVectorIndexWriter(client=object(), embedding_dim=64)
+    writer = QdrantVectorIndexWriter(allow_test_embedding=True, client=object(), embedding_dim=64)
     text_collection = writer.collection_name(_stable_tier())
     vision_collection = writer.vision_collection_name("siglip_base")
 

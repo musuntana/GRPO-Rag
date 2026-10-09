@@ -32,7 +32,6 @@ from ragos.core.logging import get_logger
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.gateway import (
     GatewayComplete,
-    GatewayEmbedder,
     GatewayGenerator,
     GatewayJudge,
 )
@@ -53,7 +52,7 @@ from ragos.retrieval.reranker import RerankFn
 from ragos.retrieval.types import RetrieverProfile
 from ragos.retrieval.verify import EntailmentFn
 from ragos.storage.repositories.retriever import RetrieverProfileRepository
-from ragos.storage.repositories.search import SearchRepository
+from ragos.storage.repositories.search import SearchRepository, SearchTier
 from sqlmodel import Session
 
 LOGGER = get_logger(__name__)
@@ -84,15 +83,14 @@ def build_recall_channels(
 ) -> dict[str, RecallFn]:
     """Wire the channels this deployment can serve.
 
-    Lexical and hot recall are PostgreSQL-backed and always available. Dense
-    recall additionally needs a vector client and an embedding route, so it is
-    built only when both are present — and when it is missing, a profile that
-    names ``dense`` reports it as unavailable rather than quietly retrieving from
-    fewer channels than it was evaluated on.
+    Lexical and hot recall use PostgreSQL. Dense can be disabled independently,
+    including when a client and router were injected. Until the gateway can prove
+    its actual immutable embedding identity, dense is available only for explicit
+    local hash tests; these mechanical checks do not measure retrieval quality.
 
-    The Qdrant collection name is derived from the embedding profile, never from
-    the tenant: one collection per embedding profile, tenant isolation by payload
-    predicate (architecture §6.3).
+    Collections are shared by tenants and separated by embedding profile, frozen
+    model version and physical tier. Mandatory payload filters and PostgreSQL
+    hydration enforce resource scope and the published source chain.
     """
     cfg = settings or get_settings()
     search_repo = SearchRepository(session=session, tenant_ctx=tenant_ctx)
@@ -104,34 +102,55 @@ def build_recall_channels(
     client = qdrant_client
     if client is None and dense:
         client = _default_qdrant_client(cfg)
-    if client is not None and router is not None:
+    if dense and client is not None and router is not None:
+        if (
+            cfg.app_env != "test"
+            or not cfg.task_test_embedding
+            or cfg.embedding_profile != "hash-test"
+            or cfg.embedding_version != "sha256-hash-v1"
+        ):
+            raise ValidationError(
+                "dense retrieval unavailable: actual gateway embedding identity is not frozen"
+            )
+        from ragos.storage.vector import hash_embed
+
+        async def test_embedding(query, context):
+            context.require_scope_key()
+            return hash_embed(query)
+
         channels["dense"] = DenseRecall(
             client,
             dense_collection_name(cfg),
-            GatewayEmbedder(router),  # type: ignore[arg-type]
+            test_embedding,
             source=search_repo,
         )
     elif dense:
         LOGGER.warning(
-            "dense recall not wired: a vector client or an embedding route is missing",
+            "dense recall not wired: required test client or router dependency is missing",
             extra={"trace_id": tenant_ctx.trace_id},
         )
     return channels
 
 
 def dense_collection_name(settings: Settings | None = None) -> str:
-    """The stable-tier dense collection for the configured embedding profile."""
+    """Stable-tier namespace for the full configured immutable embedding identity."""
     cfg = settings or get_settings()
-    return f"ragos_{cfg.embedding_profile}_stable"
+    from ragos.storage.vector import collection_name
+
+    return collection_name(
+        embedding_profile=cfg.embedding_profile,
+        embedding_version=cfg.embedding_version,
+        tier=SearchTier.STABLE,
+    )
 
 
-def build_parent_resolver(
-    *, session: Session, tenant_ctx: TenantContext
-) -> SearchParentResolver:
+def build_parent_resolver(*, session: Session, tenant_ctx: TenantContext) -> SearchParentResolver:
     return SearchParentResolver(SearchRepository(session=session, tenant_ctx=tenant_ctx))
 
 
 def _default_qdrant_client(settings: Settings) -> object | None:
+    if not settings.qdrant_url:
+        return None
     try:
         from qdrant_client import QdrantClient
     except ImportError:  # pragma: no cover - optional dependency
@@ -142,7 +161,6 @@ def _default_qdrant_client(settings: Settings) -> object | None:
     except Exception:
         LOGGER.exception("could not construct a qdrant client; dense recall unavailable")
         return None
-
 
 
 class RetrievalService:
@@ -181,9 +199,7 @@ class RetrievalService:
     # -- profile resolution -------------------------------------------------
 
     def require_profile(self, profile_id: UUID) -> tuple[RetrieverProfile, str | None]:
-        row = self.repo.require_latest_version(
-            scope_key=self.scope_key, profile_id=profile_id
-        )
+        row = self.repo.require_latest_version(scope_key=self.scope_key, profile_id=profile_id)
         return profile_from_row(row), row.name
 
     def require_profile_version(
@@ -236,9 +252,7 @@ class RetrievalService:
             LOGGER.error(message, extra={"trace_id": self.tenant_ctx.trace_id})
 
         if not profile.citation_verify_semantic and self.entailment is not None:
-            LOGGER.debug(
-                "semantic citation verification is wired but disabled by the profile"
-            )
+            LOGGER.debug("semantic citation verification is wired but disabled by the profile")
         if profile.citation_verify_semantic and self.entailment is None:
             raise ValidationError(
                 "profile requests semantic citation verification but no entailment "

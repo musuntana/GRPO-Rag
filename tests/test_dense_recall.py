@@ -14,16 +14,16 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import pytest
-from ragos.core.errors import PermissionDeniedError, ProviderError
+from ragos.core.errors import PermissionDeniedError, ProviderError, ValidationError
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.gateway import GatewayEmbedder
 from ragos.retrieval.recall.dense import DenseRecall
 from ragos.retrieval.types import RetrieverProfile
-from ragos.runtime.vector import build_filter_spec
 from ragos.storage.repositories.search import SearchHit, SearchTier
+from ragos.storage.vector import build_filter_spec
 
 TENANT_ID = uuid4()
 
@@ -50,8 +50,14 @@ def _profile() -> RetrieverProfile:
 def _point(chunk_id: UUID, score: float, **payload: Any) -> Any:
     base = {
         "chunk_id": str(chunk_id),
-        "doc_id": str(uuid4()),
-        "kb_id": None,
+        "tenant_id": str(TENANT_ID),
+        "doc_id": str(uuid5(chunk_id, "synthetic-doc")),
+        "document_version_id": str(uuid5(chunk_id, "synthetic-version")),
+        "representation_id": str(uuid5(chunk_id, "synthetic-representation")),
+        "index_id": str(uuid5(chunk_id, "synthetic-index")),
+        "representation_char_count": 1000,
+        "parent_unit": "page",
+        "kb_id": UUID("00000000-0000-0000-0000-000000000102"),
         "layer": "L1",
         "parent_chunk_id": None,
         "page_no": 4,
@@ -96,8 +102,13 @@ class _FakeSource:
 def _hit(chunk_id: UUID, body: str, **overrides) -> SearchHit:
     fields = {
         "chunk_id": chunk_id,
-        "document_id": uuid4(),
-        "kb_id": None,
+        "document_id": uuid5(chunk_id, "synthetic-doc"),
+        "document_version_id": uuid5(chunk_id, "synthetic-version"),
+        "representation_id": uuid5(chunk_id, "synthetic-representation"),
+        "index_id": uuid5(chunk_id, "synthetic-index"),
+        "representation_char_count": 1000,
+        "parent_unit": "page",
+        "kb_id": UUID("00000000-0000-0000-0000-000000000102"),
         "layer": "L1",
         "body": body,
         "metadata_json": {},
@@ -197,9 +208,7 @@ def test_a_vector_store_outage_raises_r_than_returning_nothing() -> None:
 def test_the_read_filter_carries_the_tenant_predicate() -> None:
     client = _FakeQdrant()
     channel = _channel(client, _FakeSource())
-    ctx = _ctx()
-    ctx.brand_id = uuid4()
-    ctx.allowed_kb_ids = [uuid4()]
+    ctx = _ctx().model_copy(update={"brand_id": uuid4(), "allowed_kb_ids": [uuid4()]})
 
     asyncio.run(channel.recall("q", ctx, _profile()))
 
@@ -212,10 +221,9 @@ def test_the_read_filter_carries_the_tenant_predicate() -> None:
 
 def test_recall_without_a_scope_key_is_refused() -> None:
     channel = _channel(_FakeQdrant(), _FakeSource())
-    ctx = _ctx()
-    ctx.scope_key = ""
+    ctx = _ctx().model_copy(update={"tenant_id": None})
 
-    with pytest.raises(PermissionDeniedError, match="scope_key"):
+    with pytest.raises(PermissionDeniedError, match="unscoped"):
         asyncio.run(channel.recall("q", ctx, _profile()))
 
 
@@ -239,9 +247,7 @@ class _FakeRouter:
 
     def embed(self, tenant_ctx: TenantContext, *, texts: list[str], use_case: str = "embed"):
         self.calls.append({"tenant_ctx": tenant_ctx, "texts": texts, "use_case": use_case})
-        return type(
-            "Result", (), {"embeddings": self.embeddings, "model": "m", "usage": {}}
-        )()
+        return type("Result", (), {"embeddings": self.embeddings, "model": "m", "usage": {}})()
 
 
 def test_the_embedder_goes_through_the_gateway_with_the_tenant() -> None:
@@ -261,3 +267,18 @@ def test_an_empty_embedding_response_is_an_error_not_a_zero_vector() -> None:
 
     with pytest.raises(ProviderError, match="no vector"):
         asyncio.run(GatewayEmbedder(router)("q", _ctx()))
+
+
+def test_dense_rejects_vector_lineage_that_does_not_match_postgres() -> None:
+    chunk_id = uuid4()
+    source = _FakeSource([_hit(chunk_id, "canonical original")])
+    point = _point(chunk_id, 0.9, document_version_id=str(uuid4()))
+    with pytest.raises(ValidationError, match="authoritative source identity"):
+        asyncio.run(_channel(_FakeQdrant([point]), source).recall("q", _ctx(), _profile()))
+
+
+def test_dense_rejects_legacy_payload_without_version_identity() -> None:
+    chunk_id = uuid4()
+    point = _point(chunk_id, 0.9, representation_id=None)
+    with pytest.raises(ValidationError, match="validated source identity"):
+        asyncio.run(_channel(_FakeQdrant([point]), _FakeSource()).recall("q", _ctx(), _profile()))

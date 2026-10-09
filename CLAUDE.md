@@ -21,4 +21,4 @@
 | `make up` / `make down` | 开发基础设施启动/停止 |
 | `make migrate` | 数据库迁移 |
 
-2026-10-09 的源码基线仍有包注册、基础类型和模型接线缺口，见 roadmap S0；Makefile 尚无 ingest-worker/train-worker target。未经用户相应授权不要运行部署、删除数据或付费训练。不得把历史通过记录或 stub 响应作为当前完成证据。
+2026-10-09 的 S0 已通过本地退出验收，见 project-progress 的最终裁决；下一步按 [S1 推进指令](docs/next-step-instructions.md) 接通真实模型与用户旅程。Makefile 尚无 ingest-worker/train-worker target，但已注册相应 Python 进程入口；未接通能力明确拒绝启动。未经用户相应授权不要运行部署、删除数据或付费训练。不得把历史通过记录或 stub 响应作为当前完成证据。

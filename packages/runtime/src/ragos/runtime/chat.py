@@ -94,7 +94,7 @@ class ChatService:
 
     @property
     def scope_key(self) -> str:
-        return self.tenant_ctx.require_scope_key()
+        return self.tenant_ctx.require_private_scope_key()
 
     async def run_turn(
         self,

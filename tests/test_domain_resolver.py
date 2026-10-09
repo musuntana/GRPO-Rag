@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 from ragos.auth.jwt import AuthClaims
-from ragos.core.errors import ValidationError
+from ragos.core.errors import PermissionDeniedError, ValidationError
 from ragos.core.tenant import ActorType
 from ragos.storage.models.app import TenantDomain
 from ragos.tenant.resolver import resolve_tenant_context
@@ -44,22 +44,19 @@ def _claims(
     )
 
 
-def test_resolver_uses_x_tenant_id_header() -> None:
-    request = _StubRequest({"X-Tenant-Id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"})
-    ctx = resolve_tenant_context(request, _claims(), trace_id="t-1")
-    assert str(ctx.tenant_id) == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-    assert ctx.tenant_slug == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"  # fallback
+def test_unverified_tenant_header_cannot_grant_membership() -> None:
+    request = _StubRequest({"X-Tenant-Id": str(uuid4())})
+    with pytest.raises(PermissionDeniedError):
+        resolve_tenant_context(request, _claims(), trace_id="t-1")
 
 
-def test_resolver_uses_x_tenant_slug_header() -> None:
-    request = _StubRequest(
-        {
-            "X-Tenant-Id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-            "X-Tenant-Slug": "acme",
-        }
+def test_slug_header_does_not_replace_trusted_claim() -> None:
+    tenant = str(uuid4())
+    request = _StubRequest({"X-Tenant-Id": tenant, "X-Tenant-Slug": "forged"})
+    ctx = resolve_tenant_context(
+        request, _claims(tenant_id=tenant, tenant_slug="trusted"), trace_id="t-1"
     )
-    ctx = resolve_tenant_context(request, _claims(), trace_id="t-1")
-    assert ctx.tenant_slug == "acme"
+    assert ctx.tenant_slug == "trusted"
 
 
 def test_resolver_uses_jwt_claim_when_no_header() -> None:
@@ -72,14 +69,10 @@ def test_resolver_uses_jwt_claim_when_no_header() -> None:
     assert str(ctx.tenant_id) == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
 
-def test_resolver_header_overrides_jwt() -> None:
-    request = _StubRequest({"X-Tenant-Id": "cccccccc-cccc-cccc-cccc-cccccccccccc"})
-    ctx = resolve_tenant_context(
-        request,
-        _claims(tenant_id="dddddddd-dddd-dddd-dddd-dddddddddddd"),
-        trace_id="t-3",
-    )
-    assert str(ctx.tenant_id) == "cccccccc-cccc-cccc-cccc-cccccccccccc"
+def test_resolver_rejects_header_that_overrides_claim() -> None:
+    request = _StubRequest({"X-Tenant-Id": str(uuid4())})
+    with pytest.raises(PermissionDeniedError):
+        resolve_tenant_context(request, _claims(tenant_id=str(uuid4())), trace_id="t-3")
 
 
 def test_resolver_raises_when_no_identifier() -> None:
@@ -113,7 +106,10 @@ def test_domain_resolution_derives_tenant_from_host_header() -> None:
     claims = _claims(tenant_id=None)
 
     ctx = resolve_tenant_context(
-        request, claims, trace_id="t-6", session=_StubSession()  # type: ignore[arg-type]
+        request,
+        claims,
+        trace_id="t-6",
+        session=_StubSession(),  # type: ignore[arg-type]
     )
     assert ctx.tenant_id == tenant_id
 
@@ -132,7 +128,10 @@ def test_domain_resolution_requires_verified_domain() -> None:
 
     with pytest.raises(ValidationError, match="Missing tenant identifier"):
         resolve_tenant_context(
-            request, claims, trace_id="t-7", session=_StubSession()  # type: ignore[arg-type]
+            request,
+            claims,
+            trace_id="t-7",
+            session=_StubSession(),  # type: ignore[arg-type]
         )
 
     _StubSession.results = []
@@ -146,6 +145,6 @@ def test_domain_resolution_not_called_when_x_tenant_id_present() -> None:
             "Host": "chat.acme.com",
         }
     )
-    claims = _claims(tenant_id=None)
+    claims = _claims(tenant_id="ffffffff-ffff-ffff-ffff-ffffffffffff")
     ctx = resolve_tenant_context(request, claims, trace_id="t-8")
     assert str(ctx.tenant_id) == "ffffffff-ffff-ffff-ffff-ffffffffffff"

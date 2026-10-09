@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from uuid import UUID
 
+from ragos.core.errors import ValidationError
 from ragos.core.logging import get_logger
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.citation import Citation, EvidenceSet, bind_markers
@@ -33,9 +34,7 @@ from ragos.retrieval.verify import EntailmentFn, citation_counts, verify_citatio
 LOGGER = get_logger(__name__)
 
 #: One recall channel: takes the query plus that channel's allocation.
-RecallFn = Callable[
-    [str, RetrieverProfile, TenantContext], Awaitable[list[ScoredChunk]]
-]
+RecallFn = Callable[[str, RetrieverProfile, TenantContext], Awaitable[list[ScoredChunk]]]
 
 #: Generation returns the answer text; citations are bound from markers against
 #: the evidence actually delivered, so a marker cannot name a page the model
@@ -155,9 +154,7 @@ class RAGPipeline:
 
         gate: GateResult | None = None
         if profile.crag_enabled and self.grader is not None:
-            gate = await self.grader.grade(
-                plan.primary, ranked.reranked.ranked, tenant_ctx
-            )
+            gate = await self.grader.grade(plan.primary, ranked.reranked.ranked, tenant_ctx)
             explain.gate_verdict = gate.verdict
             explain.gate_confidence = gate.confidence
             explain.gate_action = gate.action
@@ -219,22 +216,41 @@ class RAGPipeline:
         explain.parents_resolved = parents_resolved
         final = dedupe_overlapping_parents(parents)[: profile.top_k_generate]
 
+        for chunk in final:
+            identity = chunk.require_source_identity()
+            if identity.tenant_id != tenant_ctx.tenant_id:
+                raise ValidationError("evidence tenant does not match the resolved identity")
+            if (
+                tenant_ctx.allowed_kb_ids is not None
+                and identity.kb_id not in tenant_ctx.allowed_kb_ids
+            ):
+                raise ValidationError("evidence knowledge base is not authorized")
+            if chunk.channel == "memory" or chunk.source_text is None:
+                raise ValidationError("enterprise evidence requires immutable source text")
+            start, end = chunk.start_char_idx, chunk.end_char_idx
+            if (
+                start is None
+                or end is None
+                or not 0 <= start < end <= identity.representation_char_count
+                or len(chunk.source_text) != end - start
+            ):
+                raise ValidationError(
+                    "enterprise evidence has invalid immutable source coordinates"
+                )
+            if (
+                identity.parent_unit == "page"
+                and (chunk.page_no is None or not 1 <= chunk.page_no <= identity.page_count)
+            ) or (identity.parent_unit == "token_window" and chunk.page_no is not None):
+                raise ValidationError("enterprise evidence has invalid representation pagination")
+        evidence = EvidenceSet(chunks=tuple(final))
         answer = await self.generator(refined, final, tenant_ctx)
 
-        evidence = EvidenceSet(
-            chunks=tuple(final),
-            page_counts={
-                c.doc_id: c.page_count for c in final if c.doc_id and c.page_count
-            },
-        )
         citations = bind_markers(answer, evidence)
 
         # Semantic verification is opt-in online: an unpriced per-claim LLM call
         # on the request path is a cost defect. Structural verification always ran.
         entailment = self.entailment if profile.citation_verify_semantic else None
-        citations = await verify_citations(
-            citations, evidence, entailment=entailment
-        )
+        citations = await verify_citations(citations, evidence, entailment=entailment)
 
         supported, generated = citation_counts(citations)
         explain.citations = [c.to_dict() for c in citations]
@@ -280,9 +296,7 @@ class RAGPipeline:
         channels = await self._recall(plan, profile, tenant_ctx)
         trimmed, _allocations = allocate_by_budget(channels, profile.channel_budgets)
         fused = self.fusioner.fuse(trimmed, profile.fusion_config)
-        reranked = await rerank(
-            plan.primary, fused, profile, tenant_ctx, reranker=self.reranker
-        )
+        reranked = await rerank(plan.primary, fused, profile, tenant_ctx, reranker=self.reranker)
         return _RecallPass(channels=channels, reranked=reranked)
 
     async def _recall(

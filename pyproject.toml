@@ -31,9 +31,19 @@ dev = [
 [project.scripts]
 ragos-api = "ragos_api.main:run"
 ragos-workflow-worker = "ragos_workflow_worker.main:run"
+ragos-ingest-worker = "ragos_ingest_worker.main:run"
+ragos-train-worker = "ragos_train_worker.main:run"
 
 [tool.setuptools]
 packages = [
+  "ragos.memory",
+  "ragos_ingest_worker",
+  "ragos_train_worker",
+  "ragos.retrieval",
+  "ragos.retrieval.parse",
+  "ragos.retrieval.query",
+  "ragos.retrieval.recall",
+  "ragos.retrieval.training",
   "ragos.auth",
   "ragos.core",
   "ragos.model_gateway",
@@ -49,6 +59,15 @@ packages = [
 ]
 
 [tool.setuptools.package-dir]
+"ragos.memory" = "packages/memory/src/ragos/memory"
+"ragos_ingest_worker" = "apps/ingest-worker/src/ragos_ingest_worker"
+"ragos_train_worker" = "apps/train-worker/src/ragos_train_worker"
+"ragos.retrieval" = "packages/retrieval/src/ragos/retrieval"
+"ragos.retrieval.parse" = "packages/retrieval/src/ragos/retrieval/parse"
+"ragos.retrieval.query" = "packages/retrieval/src/ragos/retrieval/query"
+"ragos.retrieval.recall" = "packages/retrieval/src/ragos/retrieval/recall"
+"ragos.retrieval.training" = "packages/retrieval/src/ragos/retrieval/training"
+
 "ragos.auth" = "packages/auth/src/ragos/auth"
 "ragos.core" = "packages/core/src/ragos/core"
 "ragos.model_gateway" = "packages/model-gateway/src/ragos/model_gateway"

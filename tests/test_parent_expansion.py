@@ -11,17 +11,48 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import pytest
 from ragos.core.errors import PermissionDeniedError
 from ragos.core.tenant import TenantContext
+from ragos.retrieval.identity import EvidenceIdentity
 from ragos.retrieval.pipeline import RAGPipeline
 from ragos.retrieval.recall.parents import SearchParentResolver
 from ragos.retrieval.types import RetrieverProfile, ScoredChunk
 from ragos.storage.repositories.search import SearchHit, SearchRepository, SearchTier
 
 TENANT_ID = uuid4()
+
+
+SYNTHETIC_TENANT_ID = UUID("00000000-0000-0000-0000-000000000101")
+
+
+def _synthetic_candidate(**fields) -> ScoredChunk:
+    """Explicit synthetic immutable lineage for unit tests, never production data."""
+    doc = fields.get("doc_id") or uuid4()
+    kb = fields.get("kb_id") or UUID("00000000-0000-0000-0000-000000000102")
+    fields.update(doc_id=doc, kb_id=kb)
+    start = fields.get("start_char_idx") or 0
+    fields.setdefault("start_char_idx", start)
+    fields.setdefault("end_char_idx", start + len(fields["text"]))
+    page = fields.get("page_no")
+    count = fields.get("page_count") or 20
+    fields["page_count"] = count if page is not None else None
+    fields["source_identity"] = EvidenceIdentity(
+        tenant_id=TENANT_ID,
+        kb_id=kb,
+        document_id=doc,
+        document_version_id=uuid5(doc, "synthetic-content"),
+        representation_id=uuid5(doc, "synthetic-representation"),
+        index_id=uuid5(doc, "synthetic-index"),
+        chunk_id=fields["chunk_id"],
+        representation_char_count=100000,
+        parent_unit="page" if page is not None else "token_window",
+        page_count=count if page is not None else None,
+    )
+    fields["source_text"] = fields["text"]
+    return ScoredChunk(**fields)
 
 
 def _ctx() -> TenantContext:
@@ -31,9 +62,9 @@ def _ctx() -> TenantContext:
 
 
 def _child(parent: UUID, *, score: float, page: int = 7) -> ScoredChunk:
-    return ScoredChunk(
+    return _synthetic_candidate(
         chunk_id=uuid4(),
-        doc_id=uuid4(),
+        doc_id=parent or uuid4(),
         kb_id=None,
         text="a child span",
         score=score,
@@ -41,15 +72,20 @@ def _child(parent: UUID, *, score: float, page: int = 7) -> ScoredChunk:
         parent_chunk_id=parent,
         page_no=page,
         start_char_idx=page * 1000,
-        end_char_idx=page * 1000 + 300,
+        end_char_idx=page * 1000 + len("a child span"),
     )
 
 
 def _hit(chunk_id: UUID, body: str, *, page: int = 7, doc_id: UUID | None = None) -> SearchHit:
     return SearchHit(
         chunk_id=chunk_id,
-        document_id=doc_id or uuid4(),
-        kb_id=None,
+        document_id=doc_id or chunk_id,
+        kb_id=UUID("00000000-0000-0000-0000-000000000102"),
+        document_version_id=uuid5(doc_id or chunk_id, "synthetic-content"),
+        representation_id=uuid5(doc_id or chunk_id, "synthetic-representation"),
+        index_id=uuid5(doc_id or chunk_id, "synthetic-index"),
+        representation_char_count=100000,
+        parent_unit="page",
         layer="L1",
         body=body,
         metadata_json={},
@@ -57,7 +93,7 @@ def _hit(chunk_id: UUID, body: str, *, page: int = 7, doc_id: UUID | None = None
         page_no=page,
         page_count=20,
         start_char_idx=page * 1000,
-        end_char_idx=page * 1000 + 1800,
+        end_char_idx=page * 1000 + len(body),
         element_type="text",
     )
 
@@ -81,9 +117,7 @@ class _FakeRepo:
         return [hit for hit in self.hits if hit.chunk_id in wanted]
 
     def count_children(self, *, tier, scope_key: str, parent_ids: list[UUID]):
-        self.count_calls.append(
-            {"tier": tier, "scope_key": scope_key, "parent_ids": parent_ids}
-        )
+        self.count_calls.append({"tier": tier, "scope_key": scope_key, "parent_ids": parent_ids})
         return {pid: self.counts[pid] for pid in parent_ids if pid in self.counts}
 
 
@@ -163,7 +197,7 @@ def test_an_unreadable_parent_does_not_silently_become_a_leaf() -> None:
 
 def test_resolution_without_a_scope_key_is_refused() -> None:
     ctx = _ctx()
-    ctx.scope_key = ""
+    ctx = ctx.model_copy(update={"tenant_id": None})
     parent = uuid4()
 
     with pytest.raises(PermissionDeniedError, match="scope_key"):
@@ -203,7 +237,7 @@ def _run_pipeline(resolver: Any, *, selected: list[ScoredChunk]) -> Any:
 
 def test_a_page_is_emitted_once_for_three_of_its_children() -> None:
     parent = uuid4()
-    doc_id = uuid4()
+    doc_id = parent
     page_hit = _hit(parent, "the whole page", page=7, doc_id=doc_id)
     children = [_child(parent, score=0.9 - i * 0.1) for i in range(3)]
     repo = _FakeRepo([page_hit], {parent: 4})
@@ -262,7 +296,7 @@ class _RecordingSession:
         self.rows = rows or []
         self.statements: list[str] = []
 
-    def exec(self, statement):
+    def execute(self, statement):
         sql = str(statement)
         self.statements.append(sql)
 
@@ -296,9 +330,7 @@ def test_count_children_of_nothing_asks_nothing() -> None:
     session = _RecordingSession()
     repo = SearchRepository(session=session, tenant_ctx=_ctx())
 
-    counts = repo.count_children(
-        tier=SearchTier.STABLE, scope_key=_ctx().scope_key, parent_ids=[]
-    )
+    counts = repo.count_children(tier=SearchTier.STABLE, scope_key=_ctx().scope_key, parent_ids=[])
 
     assert counts == {}
     assert session.statements == []

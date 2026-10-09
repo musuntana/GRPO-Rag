@@ -133,7 +133,7 @@ def test_the_facts_used_in_a_prompt_have_their_recency_clock_reset() -> None:
     asyncio.run(manager.build_context(user_id=USER_ID, query="units", now=NOW))
 
     assert store.touched and store.touched[0]["fact_ids"]
-    assert store.recalled[0]["scope_key"] == manager.tenant_ctx.scope_key
+    assert store.recalled[0]["scope_key"] == manager.tenant_ctx.require_private_scope_key()
 
 
 def test_the_context_carries_facts_in_ranked_order() -> None:
@@ -252,7 +252,7 @@ def test_memory_recall_is_scoped_to_the_actor() -> None:
 
     assert repo.calls[0]["tier"].value == "memory"
     assert repo.calls[0]["user_id"] == USER_ID
-    assert repo.calls[0]["scope_key"] == ctx.scope_key
+    assert repo.calls[0]["scope_key"] == ctx.require_private_scope_key()
 
 
 def test_memory_recall_without_an_actor_refuses() -> None:
@@ -287,8 +287,9 @@ def test_memory_hits_carry_their_own_layer() -> None:
 def test_an_empty_memory_channel_does_not_take_its_budget() -> None:
     """The rule that keeps dense from dominating by default."""
     dense = [
-        ScoredChunk(chunk_id=uuid4(), doc_id=uuid4(), kb_id=None, text="d", score=1.0,
-                    channel="dense")
+        ScoredChunk(
+            chunk_id=uuid4(), doc_id=uuid4(), kb_id=None, text="d", score=1.0, channel="dense"
+        )
     ]
 
     trimmed, allocations = allocate_by_budget(

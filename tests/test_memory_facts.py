@@ -107,9 +107,11 @@ class _Session:
             elif field == "valid_until":
                 # A NULL interval has no ordering: only an explicit IS [NOT] NULL
                 # predicate, handled below, decides whether it is in scope.
-                rows = [r for r in rows if r.valid_until is None or _compare(
-                    r.valid_until, operator, value
-                )]
+                rows = [
+                    r
+                    for r in rows
+                    if r.valid_until is None or _compare(r.valid_until, operator, value)
+                ]
 
         # IS [NOT] NULL counts only when it is the *whole* predicate for the column.
         # In a point-in-time query ``valid_until IS NULL OR valid_until > :at`` is
@@ -311,14 +313,13 @@ def test_a_foreign_scope_key_is_refused() -> None:
     store, _ = _store()
 
     with pytest.raises(PermissionDeniedError, match="does not match"):
-        store.recall(scope_key=f"{OTHER_TENANT_ID}::u_1", user_id=USER_ID)
+        store.recall(scope_key=f"tenant/{OTHER_TENANT_ID}/actor/u_1", user_id=USER_ID)
 
 
 def test_the_store_refuses_to_exist_without_a_scope_key() -> None:
-    ctx = _ctx(user_id=USER_ID)
-    ctx.scope_key = ""
+    ctx = _ctx(user_id=USER_ID).model_copy(update={"tenant_id": None})
 
-    with pytest.raises(PermissionDeniedError, match="scope_key"):
+    with pytest.raises(PermissionDeniedError, match="unscoped"):
         MemoryFactStore(session=_Session(), tenant_ctx=ctx)
 
 
@@ -359,10 +360,16 @@ def test_a_contradicting_fact_closes_the_prior_one_without_erasing_it() -> None:
 def test_recall_returns_the_current_fact_and_not_the_superseded_one() -> None:
     store, _ = _store(
         [
-            _row("I live in Berlin", subject_key="city_of_residence",
-                 valid_until=NOW - timedelta(days=1)),
-            _row("I live in Lisbon", subject_key="city_of_residence",
-                 valid_from=NOW - timedelta(days=1)),
+            _row(
+                "I live in Berlin",
+                subject_key="city_of_residence",
+                valid_until=NOW - timedelta(days=1),
+            ),
+            _row(
+                "I live in Lisbon",
+                subject_key="city_of_residence",
+                valid_from=NOW - timedelta(days=1),
+            ),
         ]
     )
 
@@ -374,17 +381,21 @@ def test_recall_returns_the_current_fact_and_not_the_superseded_one() -> None:
 def test_a_point_in_time_query_answers_from_the_interval() -> None:
     store, _ = _store(
         [
-            _row("I live in Berlin", subject_key="city_of_residence",
-                 valid_from=NOW - timedelta(days=200),
-                 valid_until=NOW - timedelta(days=100)),
-            _row("I live in Lisbon", subject_key="city_of_residence",
-                 valid_from=NOW - timedelta(days=100)),
+            _row(
+                "I live in Berlin",
+                subject_key="city_of_residence",
+                valid_from=NOW - timedelta(days=200),
+                valid_until=NOW - timedelta(days=100),
+            ),
+            _row(
+                "I live in Lisbon",
+                subject_key="city_of_residence",
+                valid_from=NOW - timedelta(days=100),
+            ),
         ]
     )
 
-    earlier = store.as_of(
-        scope_key=store.scope_key, user_id=USER_ID, at=NOW - timedelta(days=150)
-    )
+    earlier = store.as_of(scope_key=store.scope_key, user_id=USER_ID, at=NOW - timedelta(days=150))
 
     assert [f.fact for f in earlier] == ["I live in Berlin"]
 
@@ -392,9 +403,7 @@ def test_a_point_in_time_query_answers_from_the_interval() -> None:
 def test_a_point_in_time_query_before_any_fact_is_empty() -> None:
     store, _ = _store([_row("I live in Lisbon", valid_from=NOW - timedelta(days=10))])
 
-    earlier = store.as_of(
-        scope_key=store.scope_key, user_id=USER_ID, at=NOW - timedelta(days=30)
-    )
+    earlier = store.as_of(scope_key=store.scope_key, user_id=USER_ID, at=NOW - timedelta(days=30))
 
     assert earlier == []
 

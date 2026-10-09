@@ -1,0 +1,1283 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> infra/migrations/versions/0001_pg_scaffold.py:8:1
+   |
+ 6 |   """
+ 7 |
+ 8 | / from __future__ import annotations
+ 9 | |
+10 | | from alembic import op
+11 | | import sqlalchemy as sa
+12 | | from sqlalchemy.dialects import postgresql
+   | |__________________________________________^
+13 |
+14 |   # revision identifiers, used by Alembic.
+   |
+help: Organize imports
+   |
+9  |
+10 + import sqlalchemy as sa
+11 | from alembic import op
+   - import sqlalchemy as sa
+12 | from sqlalchemy.dialects import postgresql
+   |
+
+E501 Line too long (121 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:43:101
+   |
+41 |         sa.Column("display_name", sa.String(length=255), nullable=False),
+42 |         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+43 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+44 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+45 |         sa.UniqueConstraint("slug", name="uq_tenant_slug"),
+   |
+
+E501 Line too long (121 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:44:101
+   |
+42 |         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+43 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+44 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+45 |         sa.UniqueConstraint("slug", name="uq_tenant_slug"),
+46 |         schema=APP_SCHEMA,
+   |
+
+E501 Line too long (121 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:57:101
+   |
+55 |         sa.Column("name", sa.String(length=255), nullable=False),
+56 |         sa.Column("description", sa.Text(), nullable=True),
+57 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+58 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+59 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_knowledge_base_tenant_id_tenant"),
+   |
+
+E501 Line too long (121 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:58:101
+   |
+56 |         sa.Column("description", sa.Text(), nullable=True),
+57 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+58 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+59 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_knowledge_base_tenant_id_tenant"),
+60 |         sa.UniqueConstraint("tenant_id", "slug", name="uq_knowledge_base_tenant_slug"),
+   |
+
+E501 Line too long (119 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:59:101
+   |
+57 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+58 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+59 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_knowledge_base_tenant_id_tenant"),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+60 |         sa.UniqueConstraint("tenant_id", "slug", name="uq_knowledge_base_tenant_slug"),
+61 |         schema=APP_SCHEMA,
+   |
+
+E501 Line too long (116 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:63:101
+   |
+61 |         schema=APP_SCHEMA,
+62 |     )
+63 |     op.create_index("ix_knowledge_base_tenant_id", "knowledge_base", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+   |                                                                                                     ^^^^^^^^^^^^^^^^
+64 |
+65 |     op.create_table(
+   |
+
+E501 Line too long (110 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:73:101
+   |
+71 |         sa.Column("title", sa.String(length=255), nullable=False),
+72 |         sa.Column("source_uri", sa.String(length=1024), nullable=True),
+73 |         sa.Column("ingest_status", sa.String(length=32), nullable=False, server_default=sa.text("'pending'")),
+   |                                                                                                     ^^^^^^^^^^
+74 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+75 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+   |
+
+E501 Line too long (121 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:74:101
+   |
+72 |         sa.Column("source_uri", sa.String(length=1024), nullable=True),
+73 |         sa.Column("ingest_status", sa.String(length=32), nullable=False, server_default=sa.text("'pending'")),
+74 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+75 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+76 |         sa.ForeignKeyConstraint(["kb_id"], [f"{APP_SCHEMA}.knowledge_base.id"], name="fk_document_record_kb_id_knowledge_base"),
+   |
+
+E501 Line too long (121 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:75:101
+   |
+73 |         sa.Column("ingest_status", sa.String(length=32), nullable=False, server_default=sa.text("'pending'")),
+74 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+75 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+76 |         sa.ForeignKeyConstraint(["kb_id"], [f"{APP_SCHEMA}.knowledge_base.id"], name="fk_document_record_kb_id_knowledge_base"),
+77 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_document_record_tenant_id_tenant"),
+   |
+
+E501 Line too long (128 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:76:101
+   |
+74 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+75 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+76 |         sa.ForeignKeyConstraint(["kb_id"], [f"{APP_SCHEMA}.knowledge_base.id"], name="fk_document_record_kb_id_knowledge_base"),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+77 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_document_record_tenant_id_tenant"),
+78 |         schema=APP_SCHEMA,
+   |
+
+E501 Line too long (120 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:77:101
+   |
+75 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+76 |         sa.ForeignKeyConstraint(["kb_id"], [f"{APP_SCHEMA}.knowledge_base.id"], name="fk_document_record_kb_id_knowledge_base"),
+77 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_document_record_tenant_id_tenant"),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+78 |         schema=APP_SCHEMA,
+79 |     )
+   |
+
+E501 Line too long (118 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:80:101
+   |
+78 |         schema=APP_SCHEMA,
+79 |     )
+80 |     op.create_index("ix_document_record_tenant_id", "document_record", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^
+81 |     op.create_index("ix_document_record_kb_id", "document_record", ["kb_id"], unique=False, schema=APP_SCHEMA)
+   |
+
+E501 Line too long (110 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:81:101
+   |
+79 |     )
+80 |     op.create_index("ix_document_record_tenant_id", "document_record", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+81 |     op.create_index("ix_document_record_kb_id", "document_record", ["kb_id"], unique=False, schema=APP_SCHEMA)
+   |                                                                                                     ^^^^^^^^^^
+82 |
+83 |     op.create_table(
+   |
+
+E501 Line too long (121 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:90:101
+   |
+88 |         sa.Column("name", sa.String(length=255), nullable=False),
+89 |         sa.Column("description", sa.Text(), nullable=True),
+90 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+91 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+92 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_workflow_definition_tenant_id_tenant"),
+   |
+
+E501 Line too long (121 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:91:101
+   |
+89 |         sa.Column("description", sa.Text(), nullable=True),
+90 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+91 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+92 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_workflow_definition_tenant_id_tenant"),
+93 |         sa.UniqueConstraint("tenant_id", "slug", name="uq_workflow_definition_tenant_slug"),
+   |
+
+E501 Line too long (124 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:92:101
+   |
+90 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+91 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+92 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_workflow_definition_tenant_id_tenant"),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+93 |         sa.UniqueConstraint("tenant_id", "slug", name="uq_workflow_definition_tenant_slug"),
+94 |         schema=APP_SCHEMA,
+   |
+
+E501 Line too long (126 > 100)
+  --> infra/migrations/versions/0001_pg_scaffold.py:96:101
+   |
+94 |         schema=APP_SCHEMA,
+95 |     )
+96 |     op.create_index("ix_workflow_definition_tenant_id", "workflow_definition", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+97 |
+98 |     op.create_table(
+   |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:105:101
+    |
+103 |         sa.Column("version", sa.Integer(), nullable=False),
+104 |         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+105 |         sa.Column("dsl", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+106 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+107 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:106:101
+    |
+104 |         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+105 |         sa.Column("dsl", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+106 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+107 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+108 |         sa.ForeignKeyConstraint(
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:107:101
+    |
+105 |         sa.Column("dsl", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+106 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+107 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+108 |         sa.ForeignKeyConstraint(
+109 |             ["workflow_definition_id"],
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:113:101
+    |
+111 |             name="fk_workflow_version_workflow_definition_id_workflow_definition",
+112 |         ),
+113 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_workflow_version_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+114 |         sa.UniqueConstraint("workflow_definition_id", "version", name="uq_workflow_version_number"),
+115 |         schema=APP_SCHEMA,
+    |
+
+E501 Line too long (120 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:117:101
+    |
+115 |         schema=APP_SCHEMA,
+116 |     )
+117 |     op.create_index("ix_workflow_version_tenant_id", "workflow_version", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+118 |     op.create_index("ix_workflow_version_workflow_definition_id", "workflow_version", ["workflow_definition_id"], unique=False, schem…
+    |
+
+E501 Line too long (146 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:118:101
+    |
+116 | …
+117 | …kflow_version", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+118 | …ion_id", "workflow_version", ["workflow_definition_id"], unique=False, schema=APP_SCHEMA)
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+119 | …
+120 | …
+    |
+
+E501 Line too long (102 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:126:101
+    |
+124 |         sa.Column("external_user_id", sa.String(length=255), nullable=False),
+125 |         sa.Column("title", sa.String(length=255), nullable=True),
+126 |         sa.Column("status", sa.String(length=32), nullable=False, server_default=sa.text("'active'")),
+    |                                                                                                     ^^
+127 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+128 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:127:101
+    |
+125 |         sa.Column("title", sa.String(length=255), nullable=True),
+126 |         sa.Column("status", sa.String(length=32), nullable=False, server_default=sa.text("'active'")),
+127 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+128 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+129 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_conversation_tenant_id_tenant"),
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:128:101
+    |
+126 |         sa.Column("status", sa.String(length=32), nullable=False, server_default=sa.text("'active'")),
+127 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+128 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+129 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_conversation_tenant_id_tenant"),
+130 |         schema=APP_SCHEMA,
+    |
+
+E501 Line too long (117 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:129:101
+    |
+127 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+128 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+129 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_conversation_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+130 |         schema=APP_SCHEMA,
+131 |     )
+    |
+
+E501 Line too long (112 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:132:101
+    |
+130 |         schema=APP_SCHEMA,
+131 |     )
+132 |     op.create_index("ix_conversation_tenant_id", "conversation", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^
+133 |     op.create_index("ix_conversation_external_user_id", "conversation", ["external_user_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (126 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:133:101
+    |
+131 |     )
+132 |     op.create_index("ix_conversation_tenant_id", "conversation", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+133 |     op.create_index("ix_conversation_external_user_id", "conversation", ["external_user_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+134 |
+135 |     op.create_table(
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:144:101
+    |
+142 | …     sa.Column("token_count", sa.Integer(), nullable=True),
+143 | …     sa.Column("is_summary", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+144 | …     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^
+145 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+146 | …     sa.ForeignKeyConstraint(["conversation_id"], [f"{APP_SCHEMA}.conversation.id"], name="fk_message_index_conversation_id_conversa…
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:145:101
+    |
+143 | …     sa.Column("is_summary", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+144 | …     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+145 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^
+146 | …     sa.ForeignKeyConstraint(["conversation_id"], [f"{APP_SCHEMA}.conversation.id"], name="fk_message_index_conversation_id_conversa…
+147 | …     sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_message_index_tenant_id_tenant"),
+    |
+
+E501 Line too long (142 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:146:101
+    |
+144 | …ue), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+145 | …ue), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+146 | …"{APP_SCHEMA}.conversation.id"], name="fk_message_index_conversation_id_conversation"),
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+147 | …SCHEMA}.tenant.id"], name="fk_message_index_tenant_id_tenant"),
+148 | …
+    |
+
+E501 Line too long (118 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:147:101
+    |
+145 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+146 |         sa.ForeignKeyConstraint(["conversation_id"], [f"{APP_SCHEMA}.conversation.id"], name="fk_message_index_conversation_id_conver…
+147 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_message_index_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+148 |         schema=APP_SCHEMA,
+149 |     )
+    |
+
+E501 Line too long (114 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:150:101
+    |
+148 |         schema=APP_SCHEMA,
+149 |     )
+150 |     op.create_index("ix_message_index_tenant_id", "message_index", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^
+151 |     op.create_index("ix_message_index_conversation_id", "message_index", ["conversation_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (126 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:151:101
+    |
+149 |     )
+150 |     op.create_index("ix_message_index_tenant_id", "message_index", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+151 |     op.create_index("ix_message_index_conversation_id", "message_index", ["conversation_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+152 |
+153 |     op.create_table(
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:159:101
+    |
+157 | …     sa.Column("conversation_id", postgresql.UUID(as_uuid=True), nullable=False),
+158 | …     sa.Column("summary", sa.Text(), nullable=False),
+159 | …     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^
+160 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+161 | …     sa.ForeignKeyConstraint(["conversation_id"], [f"{APP_SCHEMA}.conversation.id"], name="fk_memory_summary_conversation_id_convers…
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:160:101
+    |
+158 | …     sa.Column("summary", sa.Text(), nullable=False),
+159 | …     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+160 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^
+161 | …     sa.ForeignKeyConstraint(["conversation_id"], [f"{APP_SCHEMA}.conversation.id"], name="fk_memory_summary_conversation_id_convers…
+162 | …     sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_memory_summary_tenant_id_tenant"),
+    |
+
+E501 Line too long (143 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:161:101
+    |
+159 | …e), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+160 | …e), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+161 | …{APP_SCHEMA}.conversation.id"], name="fk_memory_summary_conversation_id_conversation"),
+    |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+162 | …CHEMA}.tenant.id"], name="fk_memory_summary_tenant_id_tenant"),
+163 | …
+    |
+
+E501 Line too long (119 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:162:101
+    |
+160 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+161 |         sa.ForeignKeyConstraint(["conversation_id"], [f"{APP_SCHEMA}.conversation.id"], name="fk_memory_summary_conversation_id_conve…
+162 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_memory_summary_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+163 |         schema=APP_SCHEMA,
+164 |     )
+    |
+
+E501 Line too long (116 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:165:101
+    |
+163 |         schema=APP_SCHEMA,
+164 |     )
+165 |     op.create_index("ix_memory_summary_tenant_id", "memory_summary", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+166 |     op.create_index("ix_memory_summary_conversation_id", "memory_summary", ["conversation_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (128 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:166:101
+    |
+164 |     )
+165 |     op.create_index("ix_memory_summary_tenant_id", "memory_summary", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+166 |     op.create_index("ix_memory_summary_conversation_id", "memory_summary", ["conversation_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+167 |
+168 |     op.create_table(
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:178:101
+    |
+176 | …     sa.Column("decay_score", sa.Float(), nullable=False, server_default=sa.text("1.0")),
+177 | …     sa.Column("last_accessed_at", sa.DateTime(timezone=True), nullable=True),
+178 | …     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^
+179 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+180 | …     sa.ForeignKeyConstraint(["conversation_id"], [f"{APP_SCHEMA}.conversation.id"], name="fk_memory_fact_conversation_id_conversati…
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:179:101
+    |
+177 | …     sa.Column("last_accessed_at", sa.DateTime(timezone=True), nullable=True),
+178 | …     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+179 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^
+180 | …     sa.ForeignKeyConstraint(["conversation_id"], [f"{APP_SCHEMA}.conversation.id"], name="fk_memory_fact_conversation_id_conversati…
+181 | …     sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_memory_fact_tenant_id_tenant"),
+    |
+
+E501 Line too long (140 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:180:101
+    |
+178 | …rue), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+179 | …rue), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+180 | …f"{APP_SCHEMA}.conversation.id"], name="fk_memory_fact_conversation_id_conversation"),
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+181 | …_SCHEMA}.tenant.id"], name="fk_memory_fact_tenant_id_tenant"),
+182 | …
+    |
+
+E501 Line too long (116 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:181:101
+    |
+179 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+180 |         sa.ForeignKeyConstraint(["conversation_id"], [f"{APP_SCHEMA}.conversation.id"], name="fk_memory_fact_conversation_id_conversa…
+181 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_memory_fact_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+182 |         schema=APP_SCHEMA,
+183 |     )
+    |
+
+E501 Line too long (110 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:184:101
+    |
+182 |         schema=APP_SCHEMA,
+183 |     )
+184 |     op.create_index("ix_memory_fact_tenant_id", "memory_fact", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^
+185 |     op.create_index("ix_memory_fact_conversation_id", "memory_fact", ["conversation_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (122 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:185:101
+    |
+183 |     )
+184 |     op.create_index("ix_memory_fact_tenant_id", "memory_fact", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+185 |     op.create_index("ix_memory_fact_conversation_id", "memory_fact", ["conversation_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+186 |
+187 |     op.create_table(
+    |
+
+E501 Line too long (111 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:194:101
+    |
+192 |         sa.Column("document_id", postgresql.UUID(as_uuid=True), nullable=False),
+193 |         sa.Column("chunk_total", sa.Integer(), nullable=False, server_default=sa.text("0")),
+194 |         sa.Column("indexing_state", sa.String(length=32), nullable=False, server_default=sa.text("'pending'")),
+    |                                                                                                     ^^^^^^^^^^^
+195 |         sa.Column("error_message", sa.Text(), nullable=True),
+196 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:196:101
+    |
+194 | …     sa.Column("indexing_state", sa.String(length=32), nullable=False, server_default=sa.text("'pending'")),
+195 | …     sa.Column("error_message", sa.Text(), nullable=True),
+196 | …     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^
+197 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+198 | …     sa.ForeignKeyConstraint(["document_id"], [f"{APP_SCHEMA}.document_record.id"], name="fk_chunk_manifest_document_id_document_rec…
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:197:101
+    |
+195 | …     sa.Column("error_message", sa.Text(), nullable=True),
+196 | …     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+197 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^
+198 | …     sa.ForeignKeyConstraint(["document_id"], [f"{APP_SCHEMA}.document_record.id"], name="fk_chunk_manifest_document_id_document_rec…
+199 | …     sa.ForeignKeyConstraint(["kb_id"], [f"{APP_SCHEMA}.knowledge_base.id"], name="fk_chunk_manifest_kb_id_knowledge_base"),
+    |
+
+E501 Line too long (141 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:198:101
+    |
+196 | …ue), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+197 | …ue), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+198 | …P_SCHEMA}.document_record.id"], name="fk_chunk_manifest_document_id_document_record"),
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+199 | …MA}.knowledge_base.id"], name="fk_chunk_manifest_kb_id_knowledge_base"),
+200 | …SCHEMA}.tenant.id"], name="fk_chunk_manifest_tenant_id_tenant"),
+    |
+
+E501 Line too long (127 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:199:101
+    |
+197 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+198 | …     sa.ForeignKeyConstraint(["document_id"], [f"{APP_SCHEMA}.document_record.id"], name="fk_chunk_manifest_document_id_document_rec…
+199 | …     sa.ForeignKeyConstraint(["kb_id"], [f"{APP_SCHEMA}.knowledge_base.id"], name="fk_chunk_manifest_kb_id_knowledge_base"),
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+200 | …     sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_chunk_manifest_tenant_id_tenant"),
+201 | …     schema=APP_SCHEMA,
+    |
+
+E501 Line too long (119 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:200:101
+    |
+198 |         sa.ForeignKeyConstraint(["document_id"], [f"{APP_SCHEMA}.document_record.id"], name="fk_chunk_manifest_document_id_document_r…
+199 |         sa.ForeignKeyConstraint(["kb_id"], [f"{APP_SCHEMA}.knowledge_base.id"], name="fk_chunk_manifest_kb_id_knowledge_base"),
+200 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_chunk_manifest_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+201 |         schema=APP_SCHEMA,
+202 |     )
+    |
+
+E501 Line too long (116 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:203:101
+    |
+201 |         schema=APP_SCHEMA,
+202 |     )
+203 |     op.create_index("ix_chunk_manifest_tenant_id", "chunk_manifest", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+204 |     op.create_index("ix_chunk_manifest_kb_id", "chunk_manifest", ["kb_id"], unique=False, schema=APP_SCHEMA)
+205 |     op.create_index("ix_chunk_manifest_document_id", "chunk_manifest", ["document_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (108 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:204:101
+    |
+202 |     )
+203 |     op.create_index("ix_chunk_manifest_tenant_id", "chunk_manifest", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+204 |     op.create_index("ix_chunk_manifest_kb_id", "chunk_manifest", ["kb_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^
+205 |     op.create_index("ix_chunk_manifest_document_id", "chunk_manifest", ["document_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (120 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:205:101
+    |
+203 |     op.create_index("ix_chunk_manifest_tenant_id", "chunk_manifest", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+204 |     op.create_index("ix_chunk_manifest_kb_id", "chunk_manifest", ["kb_id"], unique=False, schema=APP_SCHEMA)
+205 |     op.create_index("ix_chunk_manifest_document_id", "chunk_manifest", ["document_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+206 |
+207 |     op.create_table(
+    |
+
+E501 Line too long (102 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:213:101
+    |
+211 |         sa.Column("workflow_version_id", postgresql.UUID(as_uuid=True), nullable=True),
+212 |         sa.Column("thread_id", sa.String(length=255), nullable=False),
+213 |         sa.Column("status", sa.String(length=32), nullable=False, server_default=sa.text("'queued'")),
+    |                                                                                                     ^^
+214 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+215 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:214:101
+    |
+212 |         sa.Column("thread_id", sa.String(length=255), nullable=False),
+213 |         sa.Column("status", sa.String(length=32), nullable=False, server_default=sa.text("'queued'")),
+214 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+215 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+216 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_run_tenant_id_tenant"),
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:215:101
+    |
+213 | …     sa.Column("status", sa.String(length=32), nullable=False, server_default=sa.text("'queued'")),
+214 | …     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+215 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^
+216 | …     sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_run_tenant_id_tenant"),
+217 | …     sa.ForeignKeyConstraint(["workflow_version_id"], [f"{APP_SCHEMA}.workflow_version.id"], name="fk_run_workflow_version_id_workfl…
+    |
+
+E501 Line too long (108 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:216:101
+    |
+214 | …     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+215 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+216 | …     sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_run_tenant_id_tenant"),
+    |                                                                                                   ^^^^^^^^
+217 | …     sa.ForeignKeyConstraint(["workflow_version_id"], [f"{APP_SCHEMA}.workflow_version.id"], name="fk_run_workflow_version_id_workfl…
+218 | …     schema=APP_SCHEMA,
+    |
+
+E501 Line too long (148 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:217:101
+    |
+215 | …, nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+216 | …EMA}.tenant.id"], name="fk_run_tenant_id_tenant"),
+217 | …f"{APP_SCHEMA}.workflow_version.id"], name="fk_run_workflow_version_id_workflow_version"),
+    |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+218 | …
+219 | …
+    |
+
+E501 Line too long (114 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:221:101
+    |
+219 |     )
+220 |     op.create_index("ix_run_tenant_id", "run", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+221 |     op.create_index("ix_run_workflow_version_id", "run", ["workflow_version_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^
+222 |     op.create_index("ix_run_thread_id", "run", ["thread_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (129 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:231:101
+    |
+229 |         sa.Column("outcome", sa.String(length=64), nullable=True),
+230 |         sa.Column("latency_ms", sa.Integer(), nullable=True),
+231 |         sa.Column("model_usage", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+232 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+233 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:232:101
+    |
+230 |         sa.Column("latency_ms", sa.Integer(), nullable=True),
+231 |         sa.Column("model_usage", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+232 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+233 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+234 |         sa.ForeignKeyConstraint(["run_id"], [f"{APP_SCHEMA}.run.id"], name="fk_run_summary_run_id_run"),
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:233:101
+    |
+231 |         sa.Column("model_usage", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+232 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+233 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+234 |         sa.ForeignKeyConstraint(["run_id"], [f"{APP_SCHEMA}.run.id"], name="fk_run_summary_run_id_run"),
+235 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_run_summary_tenant_id_tenant"),
+    |
+
+E501 Line too long (104 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:234:101
+    |
+232 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+233 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+234 |         sa.ForeignKeyConstraint(["run_id"], [f"{APP_SCHEMA}.run.id"], name="fk_run_summary_run_id_run"),
+    |                                                                                                     ^^^^
+235 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_run_summary_tenant_id_tenant"),
+236 |         sa.UniqueConstraint("run_id", name="uq_run_summary_run_id"),
+    |
+
+E501 Line too long (116 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:235:101
+    |
+233 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+234 |         sa.ForeignKeyConstraint(["run_id"], [f"{APP_SCHEMA}.run.id"], name="fk_run_summary_run_id_run"),
+235 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_run_summary_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+236 |         sa.UniqueConstraint("run_id", name="uq_run_summary_run_id"),
+237 |         schema=APP_SCHEMA,
+    |
+
+E501 Line too long (110 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:239:101
+    |
+237 |         schema=APP_SCHEMA,
+238 |     )
+239 |     op.create_index("ix_run_summary_tenant_id", "run_summary", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^
+240 |     op.create_index("ix_run_summary_run_id", "run_summary", ["run_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (104 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:240:101
+    |
+238 |     )
+239 |     op.create_index("ix_run_summary_tenant_id", "run_summary", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+240 |     op.create_index("ix_run_summary_run_id", "run_summary", ["run_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^
+241 |
+242 |     op.create_table(
+    |
+
+E501 Line too long (103 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:247:101
+    |
+245 |         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
+246 |         sa.Column("kind", sa.String(length=64), nullable=False),
+247 |         sa.Column("status", sa.String(length=32), nullable=False, server_default=sa.text("'pending'")),
+    |                                                                                                     ^^^
+248 |         sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+249 |         sa.Column("available_at", sa.DateTime(timezone=True), nullable=True),
+    |
+
+E501 Line too long (125 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:248:101
+    |
+246 |         sa.Column("kind", sa.String(length=64), nullable=False),
+247 |         sa.Column("status", sa.String(length=32), nullable=False, server_default=sa.text("'pending'")),
+248 |         sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+249 |         sa.Column("available_at", sa.DateTime(timezone=True), nullable=True),
+250 |         sa.Column("lease_until", sa.DateTime(timezone=True), nullable=True),
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:253:101
+    |
+251 |         sa.Column("attempts", sa.Integer(), nullable=False, server_default=sa.text("0")),
+252 |         sa.Column("idempotency_key", sa.String(length=255), nullable=False),
+253 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+254 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+255 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_task_tenant_id_tenant"),
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:254:101
+    |
+252 |         sa.Column("idempotency_key", sa.String(length=255), nullable=False),
+253 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+254 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+255 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_task_tenant_id_tenant"),
+256 |         sa.UniqueConstraint("tenant_id", "idempotency_key", name="uq_task_tenant_idempotency_key"),
+    |
+
+E501 Line too long (109 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:255:101
+    |
+253 |         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+254 |         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+255 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_task_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^
+256 |         sa.UniqueConstraint("tenant_id", "idempotency_key", name="uq_task_tenant_idempotency_key"),
+257 |         schema=APP_SCHEMA,
+    |
+
+E501 Line too long (102 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:261:101
+    |
+259 |     op.create_index("ix_task_tenant_id", "task", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+260 |     op.create_index("ix_task_status", "task", ["status"], unique=False, schema=APP_SCHEMA)
+261 |     op.create_index("ix_task_available_at", "task", ["available_at"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^
+262 |     op.create_index("ix_task_lease_until", "task", ["lease_until"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (101 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:272:101
+    |
+270 |             sa.Column("document_id", postgresql.UUID(as_uuid=True), nullable=True),
+271 |             sa.Column("parent_chunk_id", postgresql.UUID(as_uuid=True), nullable=True),
+272 |             sa.Column("layer", sa.String(length=16), nullable=False, server_default=sa.text("'L1'")),
+    |                                                                                                     ^
+273 |             sa.Column("lang", sa.String(length=16), nullable=False, server_default=sa.text("'simple'")),
+274 |             sa.Column("title", sa.Text(), nullable=True),
+    |
+
+E501 Line too long (104 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:273:101
+    |
+271 |             sa.Column("parent_chunk_id", postgresql.UUID(as_uuid=True), nullable=True),
+272 |             sa.Column("layer", sa.String(length=16), nullable=False, server_default=sa.text("'L1'")),
+273 |             sa.Column("lang", sa.String(length=16), nullable=False, server_default=sa.text("'simple'")),
+    |                                                                                                     ^^^^
+274 |             sa.Column("title", sa.Text(), nullable=True),
+275 |             sa.Column("headings_text", sa.Text(), nullable=True),
+    |
+
+E501 Line too long (135 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:278:101
+    |
+276 | …lse),
+277 | …le=True),
+278 | …ONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+279 | …zone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+280 | …zone=True), nullable=True),
+    |
+
+E501 Line too long (125 > 100)
+   --> infra/migrations/versions/0001_pg_scaffold.py:279:101
+    |
+277 | …     sa.Column("tags_text", sa.Text(), nullable=True),
+278 | …     sa.Column("metadata_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+279 | …     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+    |                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^
+280 | …     sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+281 | …     sa.Column(
+    |
+
+E501 Line too long (101 > 100)
+  --> infra/migrations/versions/0004_model_gateway.py:65:101
+   |
+63 |         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+64 |         sa.Column("last_health_check_at", sa.DateTime(timezone=True), nullable=True),
+65 |         sa.Column("consecutive_failures", sa.Integer(), nullable=False, server_default=sa.text("0")),
+   |                                                                                                     ^
+66 |         sa.Column(
+67 |             "created_at",
+   |
+
+E501 Line too long (108 > 100)
+  --> infra/migrations/versions/0004_model_gateway.py:85:101
+   |
+83 |         schema=APP_SCHEMA,
+84 |     )
+85 |     op.create_index("ix_key_pool_provider_id", "key_pool", ["provider_id"], unique=False, schema=APP_SCHEMA)
+   |                                                                                                     ^^^^^^^^
+86 |
+87 |     # 3. ModelProfile table (tenant-scoped)
+   |
+
+E501 Line too long (114 > 100)
+   --> infra/migrations/versions/0004_model_gateway.py:128:101
+    |
+126 |         schema=APP_SCHEMA,
+127 |     )
+128 |     op.create_index("ix_model_profile_tenant_id", "model_profile", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^
+129 |     op.create_index("ix_model_profile_provider_id", "model_profile", ["provider_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (118 > 100)
+   --> infra/migrations/versions/0004_model_gateway.py:129:101
+    |
+127 |     )
+128 |     op.create_index("ix_model_profile_tenant_id", "model_profile", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+129 |     op.create_index("ix_model_profile_provider_id", "model_profile", ["provider_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+130 |
+131 |     # 4. TenantModelBinding table (tenant-scoped)
+    |
+
+E501 Line too long (128 > 100)
+   --> infra/migrations/versions/0004_model_gateway.py:164:101
+    |
+162 |         schema=APP_SCHEMA,
+163 |     )
+164 |     op.create_index("ix_tenant_model_binding_tenant_id", "tenant_model_binding", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+165 |     op.create_index("ix_tenant_model_binding_profile_id", "tenant_model_binding", ["profile_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (130 > 100)
+   --> infra/migrations/versions/0004_model_gateway.py:165:101
+    |
+163 |     )
+164 |     op.create_index("ix_tenant_model_binding_tenant_id", "tenant_model_binding", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+165 |     op.create_index("ix_tenant_model_binding_profile_id", "tenant_model_binding", ["profile_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+166 |
+167 |     # 5. Enable RLS on the new tenant-scoped tables
+    |
+
+E501 Line too long (102 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:106:101
+    |
+104 |     )
+105 |     for table in _SEARCH_TABLES:
+106 |         op.create_index(f"ix_{table}_page_no", table, ["page_no"], unique=False, schema=SEARCH_SCHEMA)
+    |                                                                                                     ^^
+107 |         op.create_index(f"ix_{table}_is_parent", table, ["is_parent"], unique=False, schema=SEARCH_SCHEMA)
+    |
+
+E501 Line too long (106 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:107:101
+    |
+105 |     for table in _SEARCH_TABLES:
+106 |         op.create_index(f"ix_{table}_page_no", table, ["page_no"], unique=False, schema=SEARCH_SCHEMA)
+107 |         op.create_index(f"ix_{table}_is_parent", table, ["is_parent"], unique=False, schema=SEARCH_SCHEMA)
+    |                                                                                                     ^^^^^^
+108 |
+109 |     # ------------------------------------------------------------------
+    |
+
+E501 Line too long (113 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:114:101
+    |
+112 |     op.add_column(
+113 |         "chunk_manifest",
+114 |         sa.Column("parent_unit", sa.String(length=16), nullable=False, server_default=sa.text("'token_window'")),
+    |                                                                                                     ^^^^^^^^^^^^^
+115 |         schema=APP_SCHEMA,
+116 |     )
+    |
+
+E501 Line too long (108 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:117:101
+    |
+115 |         schema=APP_SCHEMA,
+116 |     )
+117 |     op.add_column("chunk_manifest", sa.Column("page_count", sa.Integer(), nullable=True), schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^
+118 |     op.add_column("chunk_manifest", sa.Column("parser_version", sa.String(length=64), nullable=True), schema=APP_SCHEMA)
+119 |     op.add_column("chunk_manifest", sa.Column("chunker_version", sa.String(length=64), nullable=True), schema=APP_SCHEMA)
+    |
+
+E501 Line too long (120 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:118:101
+    |
+116 |     )
+117 |     op.add_column("chunk_manifest", sa.Column("page_count", sa.Integer(), nullable=True), schema=APP_SCHEMA)
+118 |     op.add_column("chunk_manifest", sa.Column("parser_version", sa.String(length=64), nullable=True), schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+119 |     op.add_column("chunk_manifest", sa.Column("chunker_version", sa.String(length=64), nullable=True), schema=APP_SCHEMA)
+120 |     op.add_column("chunk_manifest", sa.Column("embedding_profile", sa.String(length=64), nullable=True), schema=APP_SCHEMA)
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:119:101
+    |
+117 |     op.add_column("chunk_manifest", sa.Column("page_count", sa.Integer(), nullable=True), schema=APP_SCHEMA)
+118 |     op.add_column("chunk_manifest", sa.Column("parser_version", sa.String(length=64), nullable=True), schema=APP_SCHEMA)
+119 |     op.add_column("chunk_manifest", sa.Column("chunker_version", sa.String(length=64), nullable=True), schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+120 |     op.add_column("chunk_manifest", sa.Column("embedding_profile", sa.String(length=64), nullable=True), schema=APP_SCHEMA)
+    |
+
+E501 Line too long (123 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:120:101
+    |
+118 |     op.add_column("chunk_manifest", sa.Column("parser_version", sa.String(length=64), nullable=True), schema=APP_SCHEMA)
+119 |     op.add_column("chunk_manifest", sa.Column("chunker_version", sa.String(length=64), nullable=True), schema=APP_SCHEMA)
+120 |     op.add_column("chunk_manifest", sa.Column("embedding_profile", sa.String(length=64), nullable=True), schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+121 |
+122 |     # ------------------------------------------------------------------
+    |
+
+E501 Line too long (110 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:131:101
+    |
+129 |         sa.Column("profile_id", _UUID, nullable=False),
+130 |         sa.Column("version", sa.Integer(), nullable=False, server_default=sa.text("1")),
+131 |         sa.Column("query_strategy", sa.String(length=32), nullable=False, server_default=sa.text("'direct'")),
+    |                                                                                                     ^^^^^^^^^^
+132 |         sa.Column("recall_channels", _JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+133 |         sa.Column("join_mode", sa.String(length=32), nullable=False, server_default=sa.text("'reciprocal_rank_fusion'")),
+    |
+
+E501 Line too long (121 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:133:101
+    |
+131 |         sa.Column("query_strategy", sa.String(length=32), nullable=False, server_default=sa.text("'direct'")),
+132 |         sa.Column("recall_channels", _JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+133 |         sa.Column("join_mode", sa.String(length=32), nullable=False, server_default=sa.text("'reciprocal_rank_fusion'")),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+134 |         sa.Column("channel_budgets", _JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+135 |         sa.Column("fusion_config", _JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    |
+
+E501 Line too long (109 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:138:101
+    |
+136 |         sa.Column("crag_thresholds", _JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+137 |         sa.Column("rerank_model_profile", sa.String(length=128), nullable=True),
+138 |         sa.Column("citation_verify_semantic", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+    |                                                                                                     ^^^^^^^^^
+139 |         sa.Column("top_k_recall", sa.Integer(), nullable=False, server_default=sa.text("50")),
+140 |         sa.Column("top_k_rerank", sa.Integer(), nullable=False, server_default=sa.text("20")),
+    |
+
+E501 Line too long (108 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:142:101
+    |
+140 |         sa.Column("top_k_rerank", sa.Integer(), nullable=False, server_default=sa.text("20")),
+141 |         sa.Column("top_k_generate", sa.Integer(), nullable=False, server_default=sa.text("6")),
+142 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_rpv_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^
+143 |         sa.UniqueConstraint("tenant_id", "profile_id", "version", name="uq_retriever_profile_version"),
+144 |     )
+    |
+
+E501 Line too long (103 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:143:101
+    |
+141 |         sa.Column("top_k_generate", sa.Integer(), nullable=False, server_default=sa.text("6")),
+142 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_rpv_tenant_id_tenant"),
+143 |         sa.UniqueConstraint("tenant_id", "profile_id", "version", name="uq_retriever_profile_version"),
+    |                                                                                                     ^^^
+144 |     )
+145 |     op.create_index("ix_rpv_tenant_id", "retriever_profile_version", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (116 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:145:101
+    |
+143 |         sa.UniqueConstraint("tenant_id", "profile_id", "version", name="uq_retriever_profile_version"),
+144 |     )
+145 |     op.create_index("ix_rpv_tenant_id", "retriever_profile_version", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+146 |     op.create_index("ix_rpv_profile_id", "retriever_profile_version", ["profile_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (118 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:146:101
+    |
+144 |     )
+145 |     op.create_index("ix_rpv_tenant_id", "retriever_profile_version", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+146 |     op.create_index("ix_rpv_profile_id", "retriever_profile_version", ["profile_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+147 |
+148 |     # ------------------------------------------------------------------
+    |
+
+E501 Line too long (103 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:157:101
+    |
+155 |         sa.Column("kb_id", _UUID, nullable=True),
+156 |         sa.Column("question", sa.Text(), nullable=False),
+157 |         sa.Column("conversation_turns", _JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    |                                                                                                     ^^^
+158 |         # Graded relevance per document. NOT a boolean: grade 1 is what makes
+159 |         # hard-negative mining useful rather than harmful.
+    |
+
+E501 Line too long (101 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:163:101
+    |
+161 |         sa.Column("expected_answer", sa.Text(), nullable=True),
+162 |         sa.Column("answerable", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+163 |         sa.Column("supported_claims", _JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    |                                                                                                     ^
+164 |         sa.Column("review_state", sa.String(length=16), nullable=False, server_default=sa.text("'pending'")),
+165 |         sa.Column("labeler", sa.String(length=255), nullable=True),
+    |
+
+E501 Line too long (109 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:164:101
+    |
+162 |         sa.Column("answerable", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+163 |         sa.Column("supported_claims", _JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+164 |         sa.Column("review_state", sa.String(length=16), nullable=False, server_default=sa.text("'pending'")),
+    |                                                                                                     ^^^^^^^^^
+165 |         sa.Column("labeler", sa.String(length=255), nullable=True),
+166 |         sa.Column("split", sa.String(length=16), nullable=False, server_default=sa.text("'dev'")),
+    |
+
+E501 Line too long (114 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:167:101
+    |
+165 |         sa.Column("labeler", sa.String(length=255), nullable=True),
+166 |         sa.Column("split", sa.String(length=16), nullable=False, server_default=sa.text("'dev'")),
+167 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_eval_case_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^^^^^^
+168 |     )
+169 |     op.create_index("ix_eval_case_tenant_id", "eval_case", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (106 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:169:101
+    |
+167 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_eval_case_tenant_id_tenant"),
+168 |     )
+169 |     op.create_index("ix_eval_case_tenant_id", "eval_case", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^
+170 |     op.create_index("ix_eval_case_kb_id", "eval_case", ["kb_id"], unique=False, schema=APP_SCHEMA)
+171 |     op.create_index("ix_eval_case_split", "eval_case", ["tenant_id", "split"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (111 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:171:101
+    |
+169 |     op.create_index("ix_eval_case_tenant_id", "eval_case", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+170 |     op.create_index("ix_eval_case_kb_id", "eval_case", ["kb_id"], unique=False, schema=APP_SCHEMA)
+171 |     op.create_index("ix_eval_case_split", "eval_case", ["tenant_id", "split"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^
+172 |
+173 |     # ------------------------------------------------------------------
+    |
+
+E501 Line too long (102 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:184:101
+    |
+182 |         sa.Column("metrics", _JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+183 |         sa.Column("case_total", sa.Integer(), nullable=False, server_default=sa.text("0")),
+184 |         sa.Column("split", sa.String(length=16), nullable=False, server_default=sa.text("'holdout'")),
+    |                                                                                                     ^^
+185 |         sa.Column("status", sa.String(length=32), nullable=False, server_default=sa.text("'completed'")),
+186 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_eval_run_tenant_id_tenant"),
+    |
+
+E501 Line too long (105 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:185:101
+    |
+183 |         sa.Column("case_total", sa.Integer(), nullable=False, server_default=sa.text("0")),
+184 |         sa.Column("split", sa.String(length=16), nullable=False, server_default=sa.text("'holdout'")),
+185 |         sa.Column("status", sa.String(length=32), nullable=False, server_default=sa.text("'completed'")),
+    |                                                                                                     ^^^^^
+186 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_eval_run_tenant_id_tenant"),
+187 |     )
+    |
+
+E501 Line too long (113 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:186:101
+    |
+184 |         sa.Column("split", sa.String(length=16), nullable=False, server_default=sa.text("'holdout'")),
+185 |         sa.Column("status", sa.String(length=32), nullable=False, server_default=sa.text("'completed'")),
+186 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_eval_run_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^^^^^
+187 |     )
+188 |     op.create_index("ix_eval_run_tenant_id", "eval_run", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (104 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:188:101
+    |
+186 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_eval_run_tenant_id_tenant"),
+187 |     )
+188 |     op.create_index("ix_eval_run_tenant_id", "eval_run", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^
+189 |     op.create_index("ix_eval_run_bundle_id", "eval_run", ["bundle_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (104 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:189:101
+    |
+187 |     )
+188 |     op.create_index("ix_eval_run_tenant_id", "eval_run", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+189 |     op.create_index("ix_eval_run_bundle_id", "eval_run", ["bundle_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^
+190 |
+191 |     # ------------------------------------------------------------------
+    |
+
+E501 Line too long (122 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:202:101
+    |
+200 |         sa.Column("agreement", sa.Float(), nullable=False, server_default=sa.text("0")),
+201 |         sa.Column("confusion", _JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+202 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_grader_validation_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+203 |     )
+204 |     op.create_index("ix_gv_tenant_id", "grader_validation", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (107 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:204:101
+    |
+202 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_grader_validation_tenant_id_tenant"),
+203 |     )
+204 |     op.create_index("ix_gv_tenant_id", "grader_validation", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^
+205 |     op.create_index("ix_gv_version", "grader_validation", ["rails_prompt_version"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (116 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:205:101
+    |
+203 |     )
+204 |     op.create_index("ix_gv_tenant_id", "grader_validation", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+205 |     op.create_index("ix_gv_version", "grader_validation", ["rails_prompt_version"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+206 |
+207 |     # ------------------------------------------------------------------
+    |
+
+E501 Line too long (122 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:222:101
+    |
+220 |         sa.Column("eval_metrics", _JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+221 |         sa.Column("is_promoted", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+222 |         sa.ForeignKeyConstraint(["tenant_id"], [f"{APP_SCHEMA}.tenant.id"], name="fk_reranker_artifact_tenant_id_tenant"),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+223 |         sa.UniqueConstraint("tenant_id", "version", name="uq_reranker_artifact_tenant_version"),
+224 |     )
+    |
+
+E501 Line too long (122 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:225:101
+    |
+223 |         sa.UniqueConstraint("tenant_id", "version", name="uq_reranker_artifact_tenant_version"),
+224 |     )
+225 |     op.create_index("ix_reranker_artifact_tenant_id", "reranker_artifact", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+226 |     op.create_index("ix_reranker_artifact_is_promoted", "reranker_artifact", ["is_promoted"], unique=False, schema=APP_SCHEMA)
+    |
+
+E501 Line too long (126 > 100)
+   --> infra/migrations/versions/0005_page_anchored_eval.py:226:101
+    |
+224 |     )
+225 |     op.create_index("ix_reranker_artifact_tenant_id", "reranker_artifact", ["tenant_id"], unique=False, schema=APP_SCHEMA)
+226 |     op.create_index("ix_reranker_artifact_is_promoted", "reranker_artifact", ["is_promoted"], unique=False, schema=APP_SCHEMA)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+227 |
+228 |     # ------------------------------------------------------------------
+    |
+
+Found 117 errors.
+[*] 1 fixable with the `--fix` option.

@@ -14,6 +14,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from ragos.core.errors import ValidationError
+from ragos.retrieval.identity import EvidenceIdentity
 
 ParentUnit = Literal["page", "token_window"]
 JoinMode = Literal["concatenate", "reciprocal_rank_fusion", "distribution_based"]
@@ -58,15 +59,32 @@ class ScoredChunk:
     end_char_idx: int | None = None
     element_type: str = ElementType.TEXT.value
     rerank_score: float | None = None
+    source_identity: EvidenceIdentity | None = None
+    source_text: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.source_identity is not None:
+            identity = self.source_identity
+            if (self.chunk_id, self.doc_id, self.kb_id) != (
+                identity.chunk_id,
+                identity.document_id,
+                identity.kb_id,
+            ):
+                raise ValidationError("candidate fields do not match its source identity")
+            if self.source_text is None:
+                self.source_text = self.text
+
+    def require_source_identity(self) -> EvidenceIdentity:
+        if self.source_identity is None:
+            raise ValidationError("unversioned candidate cannot be enterprise evidence")
+        return self.source_identity
 
 
 @dataclass(slots=True)
 class FusionConfig:
     join_mode: JoinMode = "reciprocal_rank_fusion"
     rrf_k: int = 60
-    layer_boost: dict[str, float] = field(
-        default_factory=lambda: {"L3": 1.5, "L2": 1.0, "L1": 0.8}
-    )
+    layer_boost: dict[str, float] = field(default_factory=lambda: {"L3": 1.5, "L2": 1.0, "L1": 0.8})
     freshness_decay: float = 0.0
     authority_boost: float = 0.0
 
@@ -93,13 +111,9 @@ class RetrieverProfile:
     tenant_id: UUID
     version: int = 1
     query_strategy: QueryStrategy = "direct"
-    recall_channels: list[str] = field(
-        default_factory=lambda: ["lexical", "dense", "hot"]
-    )
+    recall_channels: list[str] = field(default_factory=lambda: ["lexical", "dense", "hot"])
     join_mode: JoinMode = "reciprocal_rank_fusion"
-    channel_budgets: dict[str, float] = field(
-        default_factory=lambda: dict(DEFAULT_CHANNEL_BUDGETS)
-    )
+    channel_budgets: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_CHANNEL_BUDGETS))
     fusion_config: FusionConfig = field(default_factory=FusionConfig)
     crag_thresholds: CragThresholds = field(default_factory=CragThresholds)
     crag_enabled: bool = True
@@ -120,14 +134,10 @@ class RetrieverProfile:
         """
         unknown = [c for c in self.recall_channels if c not in self.channel_budgets]
         if unknown:
-            raise ValidationError(
-                "recall channel has no budget allocated", channels=unknown
-            )
+            raise ValidationError("recall channel has no budget allocated", channels=unknown)
         total = sum(self.channel_budgets.values())
         if total > 1.0 + 1e-9:
-            raise ValidationError(
-                "per-channel token budgets must sum to <= 1.0", total=total
-            )
+            raise ValidationError("per-channel token budgets must sum to <= 1.0", total=total)
         if self.top_k_rerank > self.top_k_recall:
             raise ValidationError(
                 "top_k_rerank cannot exceed top_k_recall",
@@ -146,12 +156,28 @@ class GoldEvidence:
     page_no: int | None = None
     chunk_id: UUID | None = None
     span: tuple[int, int] | None = None
+    source_identity: EvidenceIdentity | None = None
 
     def __post_init__(self) -> None:
         if self.grade not in (0, 1, 2, 3):
             raise ValidationError(
                 "relevance grade must be 0-3", grade=self.grade, doc_id=str(self.doc_id)
             )
+
+        if self.source_identity is not None:
+            identity = self.source_identity
+            if str(self.doc_id) != str(identity.document_id) or (
+                self.chunk_id is not None and self.chunk_id != identity.chunk_id
+            ):
+                raise ValidationError("gold evidence does not match its source identity")
+            if self.page_no is not None and (
+                identity.parent_unit != "page" or not 1 <= self.page_no <= identity.page_count
+            ):
+                raise ValidationError("gold evidence page does not match representation")
+            if self.span is not None and not (
+                0 <= self.span[0] < self.span[1] <= identity.representation_char_count
+            ):
+                raise ValidationError("gold evidence span exceeds representation")
 
 
 @dataclass(slots=True)

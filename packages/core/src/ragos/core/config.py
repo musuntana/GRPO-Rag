@@ -22,8 +22,15 @@ class Settings(BaseSettings):
     pg_echo: bool = False
     pg_pool_size: int = 10
     pg_max_overflow: int = 20
+    pg_connect_timeout: int = Field(default=3, ge=1, le=30)
+    pg_pool_timeout: int = Field(default=3, ge=1, le=30)
+    pg_statement_timeout_ms: int = Field(default=5000, ge=1, le=60000)
+    pg_lock_timeout_ms: int = Field(default=1000, ge=1, le=10000)
     storage_root: str = "data/storage"
-    qdrant_url: str = "http://localhost:6333"
+    embedding_profile: str = "hash-test"
+    embedding_version: str = "sha256-hash-v1"
+    task_test_embedding: bool = False
+    qdrant_url: str = ""
     valkey_url: str = "redis://localhost:6379"
 
     model_config = SettingsConfigDict(

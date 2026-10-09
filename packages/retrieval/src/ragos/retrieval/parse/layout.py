@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
+from uuid import UUID
 
 from ragos.core.errors import ValidationError
 
@@ -30,7 +31,7 @@ class SourceType(StrEnum):
 
 
 #: Sources whose semantic unit is the page.
-PAGINATED_SOURCES = frozenset({SourceType.PDF, SourceType.PPTX, SourceType.DOCX})
+PAGINATED_SOURCES = frozenset({SourceType.PDF, SourceType.PPTX})
 
 
 @dataclass(slots=True)
@@ -91,10 +92,23 @@ class ParsedDocument:
     pages: list[Page] = field(default_factory=list)
     title: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    document_version_id: UUID | None = None
+    representation_id: UUID | None = None
+    render_version: str | None = None
 
     @property
     def parent_unit(self) -> str:
-        return "page" if self.source_type in PAGINATED_SOURCES else "token_window"
+        return (
+            "page"
+            if (
+                self.source_type in PAGINATED_SOURCES
+                or (
+                    self.source_type == SourceType.DOCX
+                    and self.render_version not in {None, "none", ""}
+                )
+            )
+            else "token_window"
+        )
 
     @property
     def page_count(self) -> int:
@@ -153,9 +167,7 @@ def parse_markdown(text: str, *, parser_version: str = "md-v1") -> ParsedDocumen
         nonlocal order, buffer
         body = "\n".join(buffer).strip()
         if body:
-            current_page.elements.append(
-                LayoutElement(element_type="text", text=body, order=order)
-            )
+            current_page.elements.append(LayoutElement(element_type="text", text=body, order=order))
             order += 1
         buffer = []
 
@@ -245,22 +257,22 @@ def assign_char_offsets(document: ParsedDocument) -> ParsedDocument:
     at the wrong span.
     """
     cursor = 0
-    for page in document.pages:
+    for index, page in enumerate(document.pages):
+        page_offset = 0
+        visible = 0
         for element in page.elements:
-            element.metadata["char_offset"] = cursor
-            element.metadata["page_offset"] = _page_offset(page, element)
-            cursor += len(element.text) + 2  # "\n\n" joiner
-    document.metadata["char_length"] = cursor
+            if element.text and visible:
+                page_offset += 2
+            element.metadata["char_offset"] = cursor + page_offset
+            element.metadata["page_offset"] = page_offset
+            if element.text:
+                page_offset += len(element.text)
+                visible += 1
+        cursor += len(page.text())
+        if index + 1 < len(document.pages):
+            cursor += 2
+    document.metadata["char_length"] = len(document.flat_text())
     return document
-
-
-def _page_offset(page: Page, target: LayoutElement) -> int:
-    offset = 0
-    for element in page.elements:
-        if element is target:
-            return offset
-        offset += len(element.text) + 2
-    return offset
 
 
 def validate(document: ParsedDocument) -> None:

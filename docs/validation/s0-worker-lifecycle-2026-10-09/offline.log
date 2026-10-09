@@ -1,0 +1,30 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Generating static SQL
+INFO  [alembic.runtime.migration] Generating static SQL
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001_pg_scaffold, bootstrap pg scaffold
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001_pg_scaffold, bootstrap pg scaffold
+INFO  [alembic.runtime.migration] Running upgrade 0001_pg_scaffold -> 0002_tenant_policy_fields, add canonical tenant policy fields
+INFO  [alembic.runtime.migration] Running upgrade 0001_pg_scaffold -> 0002_tenant_policy_fields, add canonical tenant policy fields
+INFO  [alembic.runtime.migration] Running upgrade 0002_tenant_policy_fields -> 0003_user_and_tenant_extras, add user, tenant_domain, tenant_brand tables and enable RLS
+INFO  [alembic.runtime.migration] Running upgrade 0002_tenant_policy_fields -> 0003_user_and_tenant_extras, add user, tenant_domain, tenant_brand tables and enable RLS
+INFO  [alembic.runtime.migration] Running upgrade 0003_user_and_tenant_extras -> 0004_model_gateway, add provider, key_pool, model_profile, tenant_model_binding tables
+INFO  [alembic.runtime.migration] Running upgrade 0003_user_and_tenant_extras -> 0004_model_gateway, add provider, key_pool, model_profile, tenant_model_binding tables
+INFO  [alembic.runtime.migration] Running upgrade 0004_model_gateway -> 0005_page_anchored_eval, page anchoring, eval cases, retriever profile versions, reranker artifacts
+INFO  [alembic.runtime.migration] Running upgrade 0004_model_gateway -> 0005_page_anchored_eval, page anchoring, eval cases, retriever profile versions, reranker artifacts
+INFO  [alembic.runtime.migration] Running upgrade 0005_page_anchored_eval -> 0006_retriever_profile_gate, retriever profile gate flag and display name
+INFO  [alembic.runtime.migration] Running upgrade 0005_page_anchored_eval -> 0006_retriever_profile_gate, retriever profile gate flag and display name
+INFO  [alembic.runtime.migration] Running upgrade 0006_retriever_profile_gate -> 0007_memory_bitemporal, bi-temporal memory facts, summary windows, and memory profile versions
+INFO  [alembic.runtime.migration] Running upgrade 0006_retriever_profile_gate -> 0007_memory_bitemporal, bi-temporal memory facts, summary windows, and memory profile versions
+INFO  [alembic.runtime.migration] Running upgrade 0007_memory_bitemporal -> 0008_chat_feedback, chat and feedback storage
+INFO  [alembic.runtime.migration] Running upgrade 0007_memory_bitemporal -> 0008_chat_feedback, chat and feedback storage
+INFO  [alembic.runtime.migration] Running upgrade 0008_chat_feedback -> 0009_fail_closed_rls, Bind each RLS policy to the actual row tenant and refuse missing scope.
+INFO  [alembic.runtime.migration] Running upgrade 0008_chat_feedback -> 0009_fail_closed_rls, Bind each RLS policy to the actual row tenant and refuse missing scope.
+INFO  [alembic.runtime.migration] Running upgrade 0009_fail_closed_rls -> 0010_immutable_evidence_lineage, Immutable source/representation identities; retain legacy rows as unversioned.
+INFO  [alembic.runtime.migration] Running upgrade 0009_fail_closed_rls -> 0010_immutable_evidence_lineage, Immutable source/representation identities; retain legacy rows as unversioned.
+INFO  [alembic.runtime.migration] Running upgrade 0010_immutable_evidence_lineage -> 0011_index_reconciliation, Persist independent search-store readback facts on the existing manifest.
+INFO  [alembic.runtime.migration] Running upgrade 0010_immutable_evidence_lineage -> 0011_index_reconciliation, Persist independent search-store readback facts on the existing manifest.
+INFO  [alembic.runtime.migration] Running upgrade 0011_index_reconciliation -> 0012_task_execution_lifecycle, Persistent deadline/cancellation and immutable task execution envelopes.
+INFO  [alembic.runtime.migration] Running upgrade 0011_index_reconciliation -> 0012_task_execution_lifecycle, Persistent deadline/cancellation and immutable task execution envelopes.

@@ -1,0 +1,549 @@
+.............................................F.......................... [ 11%]
+.............F.......................................................... [ 22%]
+........................................................................ [ 34%]
+........................................................................ [ 45%]
+........................................................................ [ 56%]
+.............................FFF........................................ [ 68%]
+...........................................F............................ [ 79%]
+.....................................ssssssss........................... [ 91%]
+............FF.....F..F...........................F.....                 [100%]
+=================================== FAILURES ===================================
+______________ test_unmarked_claim_is_bound_but_left_unattributed ______________
+
+    def test_unmarked_claim_is_bound_but_left_unattributed() -> None:
+        chunk = _chunk("a")
+        evidence = _evidence(chunk)
+    
+        citations = bind_markers("A claim with no marker.", evidence)
+    
+        assert citations[0].marker_index == -1
+>       assert citations[0].chunk_id == chunk.chunk_id
+E       AssertionError: assert UUID('00000000-0000-0000-0000-000000000000') == UUID('0a962308-a830-48ee-858b-ef9e96383e93')
+E        +  where UUID('00000000-0000-0000-0000-000000000000') = Citation(chunk_id=UUID('00000000-0000-0000-0000-000000000000'), doc_id=None, page_no=None, start_char_idx=None, end_ch...tity=None, structural_verdict='not_checked', semantic_verdict='not_checked', marker_index=-1, marker_out_of_range=None).chunk_id
+E        +  and   UUID('0a962308-a830-48ee-858b-ef9e96383e93') = ScoredChunk(chunk_id=UUID('0a962308-a830-48ee-858b-ef9e96383e93'), doc_id=UUID('2cf8b2a3-7ed8-4b9b-a1bc-bd654ec55d98')...8-a830-48ee-858b-ef9e96383e93'), representation_char_count=100000, parent_unit='page', page_count=20), source_text='a').chunk_id
+
+tests/test_citation_verify.py:239: AssertionError
+_______________ test_an_event_is_on_disk_before_it_is_delivered ________________
+
+log = <ragos.runtime.events.EventLog object at 0x74d832be8740>
+
+    def test_an_event_is_on_disk_before_it_is_delivered(log: EventLog) -> None:
+        """The ordering is the guarantee: acknowledged implies durable."""
+        run_id = uuid4()
+        observed: list[int] = []
+    
+        async def scenario() -> None:
+            sink = EventSink(log, scope_key=SCOPE_KEY, run_id=run_id)
+    
+            async def consumer():
+                async for event in sink.stream():
+                    # The file already contains this event at the moment it arrives.
+                    on_disk = log.read_after(scope_key=SCOPE_KEY, run_id=run_id, after_id=0)
+                    observed.append(len(on_disk))
+                    yield event
+    
+            async def produce() -> None:
+                await sink.emit("a", {})
+                await sink.emit("b", {})
+                await sink.close()
+    
+            producer = asyncio.create_task(produce())
+            async for _ in consumer():
+                pass
+            await producer
+    
+        asyncio.run(scenario())
+    
+>       assert observed == [1, 2]
+E       assert [2, 2] == [1, 2]
+E         
+E         At index 0 diff: 2 != 1
+E         Use -v to get more diff
+
+tests/test_event_log.py:111: AssertionError
+_________ test_decomposed_queries_reach_every_channel_and_deduplicate __________
+
+    def test_decomposed_queries_reach_every_channel_and_deduplicate() -> None:
+        """The same passage must not occupy two rerank slots because the question was multi-part."""
+        seen: list[str] = []
+        shared = _chunk("shared passage", score=0.5)
+    
+        async def recall(query, _profile, _ctx):
+            seen.append(query)
+            return [shared, _chunk(f"hit for {query}", score=0.4)]
+    
+        async def generator(_q, _e, _c):
+            return "answer [1]."
+    
+        engine = QueryEngine(decomposer=Decomposer(_complete("alpha\nbeta")))
+        pipeline = RAGPipeline(
+            recall_channels={"dense": recall},
+            generator=generator,
+            query_engine=engine,
+        )
+        profile = _profile(query_strategy="decompose")
+        ctx = _ctx()
+        profile.tenant_id = ctx.tenant_id
+    
+>       result = asyncio.run(pipeline.run("alpha and beta", ctx, profile))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_query_engine.py:352: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/retrieval/pipeline.py:220: in run
+    identity = chunk.require_source_identity()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ScoredChunk(chunk_id=UUID('01b70881-2fcc-4fc0-b09e-6583ab1c660d'), doc_id=UUID('7f1208e9-7321-4d20-8425-80fdf9d8d2b4')...40, start_char_idx=10, end_char_idx=90, element_type='text', rerank_score=None, source_identity=None, source_text=None)
+
+    def require_source_identity(self) -> EvidenceIdentity:
+        if self.source_identity is None:
+>           raise ValidationError("unversioned candidate cannot be enterprise evidence")
+E           ragos.core.errors.ValidationError: VALIDATION_ERROR: unversioned candidate cannot be enterprise evidence
+
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/retrieval/types.py:79: ValidationError
+_____ test_the_ambiguous_path_re_retrieves_once_and_reports_what_it_added ______
+
+    def test_the_ambiguous_path_re_retrieves_once_and_reports_what_it_added() -> None:
+        ctx = _ctx()
+        attempts: list[str] = []
+    
+        async def recall(query, _profile, _ctx):
+            attempts.append(query)
+            if len(attempts) == 1:
+                return [_chunk("partial")]
+            return [_chunk("the missing half", score=0.95)]
+    
+        async def generator(_q, _e, _c):
+            return "answer [1]."
+    
+        async def judge(query, messages, _ctx):
+            ids = _chunk_ids(messages)
+            # Grade the first pass as unusable, and accept the re-retrieved evidence.
+            grades = 1 if len(attempts) == 1 else 3
+            return json.dumps({"grades": [{"chunk_id": cid, "grade": grades} for cid in ids]})
+    
+        pipeline = RAGPipeline(
+            recall_channels={"dense": recall},
+            generator=generator,
+            grader=RelevanceGrader(judge=judge, thresholds=CragThresholds()),
+        )
+        profile = _profile()
+        profile.tenant_id = ctx.tenant_id
+    
+>       result = asyncio.run(pipeline.run("what did we agree?", ctx, profile))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_query_engine.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/retrieval/pipeline.py:220: in run
+    identity = chunk.require_source_identity()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ScoredChunk(chunk_id=UUID('7f4c4c00-96c0-406e-a6a1-0b61d1600461'), doc_id=UUID('92677591-7789-4a72-a51a-285ba559a25e')...40, start_char_idx=10, end_char_idx=90, element_type='text', rerank_score=None, source_identity=None, source_text=None)
+
+    def require_source_identity(self) -> EvidenceIdentity:
+        if self.source_identity is None:
+>           raise ValidationError("unversioned candidate cannot be enterprise evidence")
+E           ragos.core.errors.ValidationError: VALIDATION_ERROR: unversioned candidate cannot be enterprise evidence
+
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/retrieval/types.py:79: ValidationError
+___________________ test_a_proceed_gate_does_not_re_retrieve ___________________
+
+    def test_a_proceed_gate_does_not_re_retrieve() -> None:
+        ctx = _ctx()
+        attempts: list[str] = []
+    
+        async def recall(query, _profile, _ctx):
+            attempts.append(query)
+            return [_chunk("answer")]
+    
+        async def generator(_q, _e, _c):
+            return "answer [1]."
+    
+        async def judge(query, messages, _ctx):
+            ids = _chunk_ids(messages)
+            return json.dumps({"grades": [{"chunk_id": cid, "grade": 3} for cid in ids]})
+    
+        pipeline = RAGPipeline(
+            recall_channels={"dense": recall},
+            generator=generator,
+            grader=RelevanceGrader(judge=judge, thresholds=CragThresholds()),
+        )
+        profile = _profile()
+        profile.tenant_id = ctx.tenant_id
+    
+>       result = asyncio.run(pipeline.run("what is the policy?", ctx, profile))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_query_engine.py:422: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/retrieval/pipeline.py:220: in run
+    identity = chunk.require_source_identity()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ScoredChunk(chunk_id=UUID('67d8e7e8-3b33-4054-9b2e-b10372baaf22'), doc_id=UUID('7eab5865-76a3-4441-b2a0-e86143b876cf')...40, start_char_idx=10, end_char_idx=90, element_type='text', rerank_score=None, source_identity=None, source_text=None)
+
+    def require_source_identity(self) -> EvidenceIdentity:
+        if self.source_identity is None:
+>           raise ValidationError("unversioned candidate cannot be enterprise evidence")
+E           ragos.core.errors.ValidationError: VALIDATION_ERROR: unversioned candidate cannot be enterprise evidence
+
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/retrieval/types.py:79: ValidationError
+_________ test_eval_run_reports_attribution_metrics_with_denominators __________
+
+    def test_eval_run_reports_attribution_metrics_with_denominators() -> None:
+        bundle = default_bundle()
+        case = _case("holdout")
+    
+        result = run_eval(
+            tenant_scope_key="t::u",
+            bundle=bundle,
+            cases=[case],
+            outcomes=[_outcome(case, bundle)],
+            split="holdout",
+        )
+    
+        assert result.metrics["citation_accuracy"] == 1.0
+        assert result.metrics["citation_completeness"] == 1.0
+>       assert result.metrics["evidence_hit_rate"] == 1.0
+E       assert 0.0 == 1.0
+
+tests/test_retrieval_pipeline.py:527: AssertionError
+____________ test_upsert_for_another_tenant_is_denied_not_rewritten ____________
+
+    def test_upsert_for_another_tenant_is_denied_not_rewritten() -> None:
+        from ragos.storage.repositories.search import SearchRepository, SearchTier
+    
+        ctx = _ctx()
+        repo = SearchRepository(session=None, tenant_ctx=ctx)
+    
+        with pytest.raises(PermissionDeniedError, match="other than the resolved scope"):
+>           repo.upsert_chunks(
+                tier=SearchTier.STABLE,
+                chunks=[_chunk(uuid4())],
+            )
+
+tests/test_tenant_isolation_probes.py:166: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/storage/repositories/search.py:118: in upsert_chunks
+    self._validate_enterprise_batch(model, chunks)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ragos.storage.repositories.search.SearchRepository object at 0x74d8201cde50>
+model = <class 'ragos.storage.models.search.SearchChunkStable'>
+chunks = [SearchChunkUpsert(id=UUID('f31e949d-4d41-4a1b-9539-f1cb033a40b4'), tenant_id=UUID('28462ee2-373e-4372-8ebd-2c09a49536...ne, document_version_id=None, representation_id=None, index_id=None, representation_char_count=None, parent_unit=None)]
+
+    def _validate_enterprise_batch(self, model, chunks: list[SearchChunkUpsert]) -> None:
+        manifests = {}
+        for chunk in sorted(chunks, key=lambda item: str(item.index_id)):
+            if chunk.tenant_id != self.tenant_ctx.tenant_id:
+>               raise PermissionDeniedError("chunk tenant does not match")
+E               ragos.core.errors.PermissionDeniedError: PERMISSION_DENIED: chunk tenant does not match
+
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/storage/repositories/search.py:226: PermissionDeniedError
+
+During handling of the above exception, another exception occurred:
+
+    def test_upsert_for_another_tenant_is_denied_not_rewritten() -> None:
+        from ragos.storage.repositories.search import SearchRepository, SearchTier
+    
+        ctx = _ctx()
+        repo = SearchRepository(session=None, tenant_ctx=ctx)
+    
+>       with pytest.raises(PermissionDeniedError, match="other than the resolved scope"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'other than the resolved scope'
+E         Actual message: 'PERMISSION_DENIED: chunk tenant does not match'
+
+tests/test_tenant_isolation_probes.py:165: AssertionError
+_________ test_an_unknown_element_type_is_rejected_rather_than_indexed _________
+
+    def test_an_unknown_element_type_is_rejected_rather_than_indexed() -> None:
+        from ragos.storage.repositories.search import SearchRepository, SearchTier
+    
+        ctx = _ctx()
+        repo = SearchRepository(session=None, tenant_ctx=ctx)
+    
+        with pytest.raises(ValidationError, match="element_type"):
+>           repo.upsert_chunks(
+                tier=SearchTier.STABLE,
+                chunks=[_chunk(ctx.tenant_id, element_type="spreadsheet-vibes")],
+            )
+
+tests/test_tenant_isolation_probes.py:179: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/storage/repositories/search.py:118: in upsert_chunks
+    self._validate_enterprise_batch(model, chunks)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ragos.storage.repositories.search.SearchRepository object at 0x74d8201cca10>
+model = <class 'ragos.storage.models.search.SearchChunkStable'>
+chunks = [SearchChunkUpsert(id=UUID('e8cb7905-b98c-4353-aa13-018dd389b2a1'), tenant_id=UUID('b3c5b805-8f08-4a80-ba67-d48cb36233...ne, document_version_id=None, representation_id=None, index_id=None, representation_char_count=None, parent_unit=None)]
+
+    def _validate_enterprise_batch(self, model, chunks: list[SearchChunkUpsert]) -> None:
+        manifests = {}
+        for chunk in sorted(chunks, key=lambda item: str(item.index_id)):
+            if chunk.tenant_id != self.tenant_ctx.tenant_id:
+                raise PermissionDeniedError("chunk tenant does not match")
+            if any(
+                value is None
+                for value in (
+                    chunk.kb_id,
+                    chunk.document_id,
+                    chunk.document_version_id,
+                    chunk.representation_id,
+                    chunk.index_id,
+                )
+            ):
+>               raise ValidationError(
+                    "New enterprise chunks require complete immutable source identity"
+                )
+E               ragos.core.errors.ValidationError: VALIDATION_ERROR: New enterprise chunks require complete immutable source identity
+
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/storage/repositories/search.py:237: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+    def test_an_unknown_element_type_is_rejected_rather_than_indexed() -> None:
+        from ragos.storage.repositories.search import SearchRepository, SearchTier
+    
+        ctx = _ctx()
+        repo = SearchRepository(session=None, tenant_ctx=ctx)
+    
+>       with pytest.raises(ValidationError, match="element_type"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'element_type'
+E         Actual message: 'VALIDATION_ERROR: New enterprise chunks require complete immutable source identity'
+
+tests/test_tenant_isolation_probes.py:178: AssertionError
+_________________ test_no_channel_is_left_without_a_predicate __________________
+
+    def test_no_channel_is_left_without_a_predicate() -> None:
+        spec = build_filter_spec(
+            f"tenant/{uuid4()}",
+            kb_ids=[uuid4()],
+            layers=["L3"],
+            element_types=["table"],
+            is_parent=False,
+            min_updated_at=1,
+        )
+    
+>       assert spec.keys() == {
+            "tenant_id",
+            "kb_id",
+            "layer",
+            "element_type",
+            "is_parent",
+            "updated_at",
+        }
+E       AssertionError: assert {'chunk_id', ..._parent', ...} == {'element_typ... 'updated_at'}
+E         
+E         Extra items in the left set:
+E         'document_version_id'
+E         'parent_unit'
+E         'representation_char_count'
+E         'representation_id'
+E         'chunk_id'...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+tests/test_tenant_isolation_probes.py:233: AssertionError
+_______________ test_vector_upsert_denies_a_foreign_tenant_chunk _______________
+
+    def test_vector_upsert_denies_a_foreign_tenant_chunk() -> None:
+        pytest.importorskip("qdrant_client")
+        from ragos.runtime.vector import QdrantVectorIndexWriter
+    
+        ctx = _ctx()
+        writer = QdrantVectorIndexWriter(allow_test_embedding=True, client=object(), embedding_dim=64)
+    
+        class _NoCollections:
+            @staticmethod
+            def get_collections():
+                class _C:
+                    collections: list = []
+    
+                return _C()
+    
+        writer.client = _NoCollections()  # type: ignore[assignment]
+    
+        with pytest.raises(PermissionDeniedError, match="does not match"):
+>           writer.upsert(tenant_ctx=ctx, tier=_stable_tier(), chunks=[_chunk(uuid4())])
+
+tests/test_tenant_isolation_probes.py:293: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ragos.runtime.vector.QdrantVectorIndexWriter object at 0x74d8201cdbb0>
+
+    def upsert(
+        self,
+        *,
+        tenant_ctx: TenantContext,
+        tier: SearchTier,
+        chunks: list[SearchChunkUpsert],
+    ) -> None:
+        if not chunks:
+            return
+        from qdrant_client.models import PointStruct
+    
+        tenant_ctx.require_scope_key()
+        for chunk in chunks:
+            if tier == SearchTier.MEMORY:
+                if any(
+                    value is not None
+                    for value in (
+                        chunk.document_version_id,
+                        chunk.representation_id,
+                        chunk.index_id,
+                        chunk.representation_char_count,
+                        chunk.parent_unit,
+                    )
+                ):
+                    raise PermissionDeniedError("memory must not carry enterprise source identity")
+            elif any(
+                not isinstance(value, UUID)
+                for value in (
+                    chunk.id,
+                    chunk.tenant_id,
+                    chunk.kb_id,
+                    chunk.document_id,
+                    chunk.document_version_id,
+                    chunk.representation_id,
+                    chunk.index_id,
+                )
+            ):
+>               raise PermissionDeniedError("enterprise vector requires complete source identity")
+E               ragos.core.errors.PermissionDeniedError: PERMISSION_DENIED: enterprise vector requires complete source identity
+
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/runtime/vector.py:187: PermissionDeniedError
+
+During handling of the above exception, another exception occurred:
+
+    def test_vector_upsert_denies_a_foreign_tenant_chunk() -> None:
+        pytest.importorskip("qdrant_client")
+        from ragos.runtime.vector import QdrantVectorIndexWriter
+    
+        ctx = _ctx()
+        writer = QdrantVectorIndexWriter(allow_test_embedding=True, client=object(), embedding_dim=64)
+    
+        class _NoCollections:
+            @staticmethod
+            def get_collections():
+                class _C:
+                    collections: list = []
+    
+                return _C()
+    
+        writer.client = _NoCollections()  # type: ignore[assignment]
+    
+>       with pytest.raises(PermissionDeniedError, match="does not match"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'does not match'
+E         Actual message: 'PERMISSION_DENIED: enterprise vector requires complete source identity'
+
+tests/test_tenant_isolation_probes.py:292: AssertionError
+______ test_vision_recall_declines_when_the_profile_has_no_vision_budget _______
+
+    def test_vision_recall_declines_when_the_profile_has_no_vision_budget() -> None:
+        """A channel without a budget is the dominance problem §8.3.1 prevents."""
+        import asyncio
+    
+        from ragos.retrieval.recall.vision import VisionRecall
+    
+        ctx = TenantContext(tenant_id=uuid4(), tenant_slug="acme", actor_id="u", trace_id="t")
+        recall = VisionRecall(
+            client=object(),
+            profile=VisionProfile(profile_id="vp", collection="c", embed=lambda _: [0.0], enabled=True),
+        )
+        profile = RetrieverProfile(
+            id=uuid4(),
+            tenant_id=ctx.tenant_id,
+            recall_channels=["vision"],
+            channel_budgets={"dense": 1.0},
+        )
+    
+>       assert asyncio.run(recall.recall("q", ctx, profile)) == []
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_vision_channel.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ragos.retrieval.recall.vision.VisionRecall object at 0x74d8203120f0>
+query = 'q'
+tenant_ctx = TenantContext(tenant_id=UUID('0b946e4d-06ea-4c84-bf0c-b3a7de1825f8'), tenant_slug='acme', actor_id='u', actor_type=<Ac...kb_ids=None, model_binding_id=None, security_level='internal', scope_key='tenant/0b946e4d-06ea-4c84-bf0c-b3a7de1825f8')
+retriever_profile = RetrieverProfile(id=UUID('aa1e7b02-d08a-4ab8-86ad-84a242b19f5b'), tenant_id=UUID('0b946e4d-06ea-4c84-bf0c-b3a7de1825f8...ed=True, rerank_model_profile=None, citation_verify_semantic=False, top_k_recall=50, top_k_rerank=20, top_k_generate=6)
+
+    async def recall(
+        self,
+        query: str,
+        tenant_ctx: TenantContext,
+        retriever_profile: RetrieverProfile,
+    ) -> list[ScoredChunk]:
+        if not self.profile.enabled:
+            LOGGER.debug("vision recall disabled for this profile; skipping")
+            return []
+    
+        tenant_ctx.require_scope_key()
+>       raise ValidationError(
+            "vision recall unavailable: authoritative representation hydration is not connected"
+        )
+E       ragos.core.errors.ValidationError: VALIDATION_ERROR: vision recall unavailable: authoritative representation hydration is not connected
+
+/tmp/ragos-s0-locked/lib/python3.12/site-packages/ragos/retrieval/recall/vision.py:99: ValidationError
+=========================== short test summary info ============================
+FAILED tests/test_citation_verify.py::test_unmarked_claim_is_bound_but_left_unattributed
+FAILED tests/test_event_log.py::test_an_event_is_on_disk_before_it_is_delivered
+FAILED tests/test_query_engine.py::test_decomposed_queries_reach_every_channel_and_deduplicate
+FAILED tests/test_query_engine.py::test_the_ambiguous_path_re_retrieves_once_and_reports_what_it_added
+FAILED tests/test_query_engine.py::test_a_proceed_gate_does_not_re_retrieve
+FAILED tests/test_retrieval_pipeline.py::test_eval_run_reports_attribution_metrics_with_denominators
+FAILED tests/test_tenant_isolation_probes.py::test_upsert_for_another_tenant_is_denied_not_rewritten
+FAILED tests/test_tenant_isolation_probes.py::test_an_unknown_element_type_is_rejected_rather_than_indexed
+FAILED tests/test_tenant_isolation_probes.py::test_no_channel_is_left_without_a_predicate
+FAILED tests/test_tenant_isolation_probes.py::test_vector_upsert_denies_a_foreign_tenant_chunk
+FAILED tests/test_vision_channel.py::test_vision_recall_declines_when_the_profile_has_no_vision_budget
+11 failed, 613 passed, 8 skipped in 6.96s

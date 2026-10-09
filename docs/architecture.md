@@ -4,7 +4,7 @@ Last updated: 2026-10-09
 
 ## 0. 当前目标、实施状态与文档职责
 
-本文件是架构约束与目标形态的主事实源，**不是当前代码全部已实现的清单**。当前源码基线 `d5a2709814b4` 的包注册、TenantContext、ORM、向量契约与训练接线仍未完成；没有前端应用，模型调用为 stub。现状与阶段门槛由 [development-roadmap](development-roadmap.md) 记录。
+本文件是架构约束与目标形态的主事实源，**不是当前代码全部已实现的清单**。恢复提交 `d5a2709814b4` 的基础接线曾存在缺口；本轮实际安装、存储、任务和隔离验证见 [project-progress](project-progress.md)。没有前端应用，真实模型与训练尚未接通；阶段门槛由 [development-roadmap](development-roadmap.md) 记录。
 
 近期目标是在多租户隔离下完成真实企业文档的 evidence retrieval → rerank → grounded answer → claim/citation verification，并以冻结数据和错误分析指导训练。用户给出的示例指标与竞品材料不作为本项目测量证据。
 
@@ -46,6 +46,16 @@ PG 是业务记录与版本状态的权威；Qdrant 是受范围约束的向量�
 ### 0.3 全阶段交付底线
 
 安全与隔离默认开启；相关功能无法保证身份、预算或隔离时拒绝执行。并发/取消/故障/replay、验证/观测/回滚属于 Interface；前端从真实 RAG 的 S1 起完成最小用户旅程。内部旧契约一次性迁移并删除；持久数据与真实外部消费者另有恢复计划。未达约束的现有代码是待修缺口，不是兼容理由。
+
+### 0.4 S0 2026-10-09 契约接线
+
+共享身份 key 固定为 `tenant/<UUID>`；私有 actor key 为 `tenant/<UUID>/actor/<percent-encoded actor_id>`。`TenantContext` 禁止动态修改及外部 scope 注入，`bind_user()` 仅在服务端查询有效用户后返回绑定 UUID 的派生上下文；私有仓储重复校验 owner，共享 KB 查询仍使用 tenant/ACL。workspace 尚无成员模型，不加入范围编码。
+
+任务完成/失败必须提供 `expected_attempts`，当前 attempts 是持久执行代次；领取只限定已注册类型，过期租约可回收。当前执行事务持有行锁来保护数据库结果，**尚不满足长任务无锁外部执行、心跳、硬截止和取消的目标**。生产入口没有真实 handler 时拒绝启动，不能据此称 workflow/ingest/train 已接通。
+
+搜索写入冲突绑定既有 tenant、KB、document 和私有 user，拒绝更换片段所有者；向量 point ID 由 tenant namespace 与 tier/resource/document/chunk 组成，payload 的 chunk_id 仍是 PostgreSQL 原始 UUID。新 ID 不复用旧集合中的无范围点：已有持久 vector 数据必须使用新 profile/影子集合重建并读回验收，不能原地混读。hash embedding 只在显式测试 opt-in；未接通真实 gateway embedding 与可恢复 manifest 时默认入库不可用。
+
+本次恢复现有迁移映射和接口，不把 nullable 页字段当真实页定位。不可变 document/representation version、完整双索引提交与恢复仍未交付，退出判定见 [progress](project-progress.md)。
 
 ## 1. Executive Summary
 
@@ -492,7 +502,7 @@ Do not create one collection per tenant.
 
 Default rule:
 
-- one collection per immutable embedding profile and physical tier; retrieval ranking changes do not invent a new collection
+- one collection per immutable embedding profile, embedding version and physical tier; a shared naming function hashes the complete identity, and retrieval ranking changes do not invent a new collection
 - tenant isolation via payload filters
 
 ### 6.3.2 Tiered Multitenancy Trigger
@@ -1239,3 +1249,7 @@ Historical reference list recorded on 2026-04-10; these external pages were not 
 - [Qdrant Overview and Strict Mode](https://qdrant.tech/documentation/overview/)
 - [Qdrant Search Overview](https://qdrant.tech/documentation/search/)
 - [Model Context Protocol Architecture](https://modelcontextprotocol.io/docs/learn/architecture)
+
+### S0来源与发布契约修订
+
+不可变来源链见 [ADR-0009](adr/0009-immutable-evidence-lineage.md)，计划及独立两端读回发布见 [ADR-0010](adr/0010-durable-index-reconciliation.md)。PG只持有ref/digest与控制状态；原文、表示及完整计划由ArtifactStore范围隔离保存。新企业Evidence/Citation须完整document-version/representation/index/chunk身份，memory不得伪装企业来源。旧无来源/无读回数据默认不可检索；current实现/验证限制见 [progress](project-progress.md)，不据代码类型存在认定契约已验收。

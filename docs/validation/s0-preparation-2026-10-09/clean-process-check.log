@@ -1,0 +1,7 @@
+2026-10-09 10:18:13,308 INFO httpx HTTP Request: GET http://testserver/healthz "HTTP/1.1 200 OK"
+2026-10-09 10:18:13,309 INFO httpx HTTP Request: POST http://testserver/chat/conversations "HTTP/1.1 401 Unauthorized"
+installed modules imported: 87
+ragos_workflow_worker explicitly unavailable: workflow execution unavailable: no real workflow task handler is registered
+ragos_ingest_worker explicitly unavailable: ingest worker unavailable: real gateway embedding is not connected
+ragos_train_worker explicitly unavailable: Train worker unavailable: no validated training handler is implemented
+API actual lifespan/checkpoint setup, healthz and missing-auth rejection passed

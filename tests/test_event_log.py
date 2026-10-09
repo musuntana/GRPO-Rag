@@ -93,7 +93,8 @@ def test_an_event_is_on_disk_before_it_is_delivered(log: EventLog) -> None:
             async for event in sink.stream():
                 # The file already contains this event at the moment it arrives.
                 on_disk = log.read_after(scope_key=SCOPE_KEY, run_id=run_id, after_id=0)
-                observed.append(len(on_disk))
+                assert any(stored.event_id == event.event_id for stored in on_disk)
+                observed.append(event.event_id)
                 yield event
 
         async def produce() -> None:
@@ -175,8 +176,9 @@ def test_the_inline_cap_is_a_module_constant() -> None:
 
 
 def test_an_event_renders_with_an_id_and_a_type(log: EventLog) -> None:
-    stored = log.append(scope_key=SCOPE_KEY, run_id=uuid4(), event="token_delta",
-                        data={"delta": "hi"})
+    stored = log.append(
+        scope_key=SCOPE_KEY, run_id=uuid4(), event="token_delta", data={"delta": "hi"}
+    )
 
     frame = stored.to_sse()
 

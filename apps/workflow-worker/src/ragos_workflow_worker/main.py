@@ -6,14 +6,17 @@ import signal
 from ragos.core.config import Settings, get_settings
 from ragos.core.logging import configure_logging, get_logger
 from ragos.runtime.checkpoints import langgraph_checkpointer
-from ragos.runtime.ingest import NoopVectorIndexWriter, VectorIndexWriter
+from ragos.runtime.ingest import VectorIndexWriter
 from ragos.runtime.tasks import (
     TaskHandlerRegistry,
-    log_only_handler,
-    make_ingest_document_handler,
     process_one_task,
 )
-from ragos.storage.db import ensure_schemas, get_engine, get_session_factory
+from ragos.storage.db import (
+    ensure_schemas,
+    get_engine,
+    get_session_factory,
+    require_migrated_schema,
+)
 
 LOGGER = get_logger(__name__)
 
@@ -26,31 +29,16 @@ def build_default_registry(
     *,
     vector_writer: VectorIndexWriter | None = None,
 ) -> TaskHandlerRegistry:
-    registry = TaskHandlerRegistry()
-    # Stub handler for smoke testing.
-    registry.register("log_only", log_only_handler)
-    # Real ingest path: FTS dual-write + vector upsert via injected writer.
-    registry.register(
-        "ingest_document",
-        make_ingest_document_handler(vector_writer=vector_writer),
+    raise RuntimeError(
+        "workflow execution unavailable: no real workflow task handler is registered"
     )
-    return registry
 
 
 def build_vector_writer(settings: Settings) -> VectorIndexWriter:
-    """Resolve a vector writer based on configuration.
-
-    Empty ``qdrant_url`` → Noop (tests, CI without qdrant).
-    Populated URL → real ``QdrantVectorIndexWriter``. Imported lazily so the
-    qdrant-client dependency is not required for unit-level tests.
-    """
-    if not settings.qdrant_url:
-        LOGGER.info("RAGOS_QDRANT_URL empty — using NoopVectorIndexWriter")
-        return NoopVectorIndexWriter()
-    from ragos.runtime.vector import QdrantVectorIndexWriter
-
-    LOGGER.info("initializing QdrantVectorIndexWriter", extra={"url": settings.qdrant_url})
-    return QdrantVectorIndexWriter(url=settings.qdrant_url)
+    raise RuntimeError(
+        "ingestion unavailable: gateway embedding "
+        "and recoverable indexing manifest are not connected"
+    )
 
 
 async def _poll_loop(
@@ -92,8 +80,9 @@ async def _poll_loop(
 async def serve() -> None:
     settings = get_settings()
     configure_logging("INFO")
-
+    registry = build_default_registry()
     engine = get_engine(settings)
+    require_migrated_schema(engine, settings)
     ensure_schemas(engine, settings)
 
     stop_event = asyncio.Event()
@@ -106,9 +95,6 @@ async def serve() -> None:
             # Non-Unix platforms, or running inside a runner that already
             # installs signal handlers.
             pass
-
-    vector_writer = build_vector_writer(settings)
-    registry = build_default_registry(vector_writer=vector_writer)
 
     async with langgraph_checkpointer(settings):
         LOGGER.info(

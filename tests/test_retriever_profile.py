@@ -169,7 +169,7 @@ def _repo(tenant_ctx: TenantContext, rows=None) -> tuple[RetrieverProfileReposit
 
 def test_the_repository_refuses_to_exist_without_a_scope_key() -> None:
     ctx = _ctx()
-    ctx.scope_key = ""
+    ctx = ctx.model_copy(update={"tenant_id": None})
 
     with pytest.raises(PermissionDeniedError):
         RetrieverProfileRepository(session=_Session(), tenant_ctx=ctx)
@@ -305,9 +305,7 @@ def test_a_profile_naming_an_unwired_channel_reports_it_rather_than_retrieving_s
         _runtime_profile(recall_channels=["lexical", "dense"])
     )
 
-    assert warnings == [
-        "recall channel 'dense' is configured but not wired in this deployment"
-    ]
+    assert warnings == ["recall channel 'dense' is configured but not wired in this deployment"]
 
 
 def test_semantic_verification_without_an_entailment_callable_is_refused() -> None:
@@ -375,13 +373,16 @@ def test_lexical_and_hot_are_always_wired() -> None:
 
 
 def test_dense_is_wired_only_with_a_client_and_an_embedding_route() -> None:
+    from ragos.core.config import Settings
     from ragos.runtime.retrieval import build_recall_channels
 
-    without_client = build_recall_channels(
-        session=_Session(), tenant_ctx=_ctx(), router=_Router()
-    )
+    without_client = build_recall_channels(session=_Session(), tenant_ctx=_ctx(), router=_Router())
     with_client = build_recall_channels(
-        session=_Session(), tenant_ctx=_ctx(), router=_Router(), qdrant_client=object()
+        session=_Session(),
+        tenant_ctx=_ctx(),
+        router=_Router(),
+        qdrant_client=object(),
+        settings=Settings(app_env="test", task_test_embedding=True),
     )
 
     assert "dense" not in without_client
@@ -395,7 +396,7 @@ def test_the_dense_collection_is_named_per_embedding_profile_not_per_tenant() ->
     a = dense_collection_name(Settings(embedding_profile="bge_m3"))
     b = dense_collection_name(Settings(embedding_profile="gte_large"))
 
-    assert a == "ragos_bge_m3_stable"
+    assert a.startswith("ragos_bge_m3_") and a.endswith("_stable")
     assert b != a
     assert "tenant" not in a
 
@@ -409,3 +410,52 @@ def _Router():
             raise AssertionError
 
     return _Router()
+
+
+def test_dense_query_refuses_an_unfrozen_production_embedding():
+    from ragos.core.config import Settings
+    from ragos.core.errors import ValidationError
+    from ragos.runtime.retrieval import build_recall_channels
+
+    with pytest.raises(ValidationError, match="identity is not frozen"):
+        build_recall_channels(
+            session=_Session(),
+            tenant_ctx=_ctx(),
+            router=_Router(),
+            qdrant_client=object(),
+            settings=Settings(app_env="dev"),
+        )
+
+
+def test_dense_reader_and_writer_share_full_embedding_identity_namespace():
+    from ragos.core.config import Settings
+    from ragos.runtime.retrieval import dense_collection_name
+    from ragos.storage.repositories.search import SearchTier
+    from ragos.storage.vector import QdrantVectorIndexWriter
+
+    cfg = Settings(embedding_profile="synthetic", embedding_version="version-one")
+    writer = QdrantVectorIndexWriter(
+        client=object(),
+        allow_test_embedding=True,
+        embedding_profile=cfg.embedding_profile,
+        embedding_version=cfg.embedding_version,
+    )
+    assert dense_collection_name(cfg) == writer.collection_name(SearchTier.STABLE)
+    assert dense_collection_name(cfg) != dense_collection_name(
+        Settings(embedding_profile="synthetic", embedding_version="version-two")
+    )
+
+
+def test_disabled_dense_ignores_injected_client_and_router():
+    from ragos.core.config import Settings
+    from ragos.runtime.retrieval import build_recall_channels
+
+    channels = build_recall_channels(
+        session=_Session(),
+        tenant_ctx=_ctx(),
+        dense=False,
+        router=_Router(),
+        qdrant_client=object(),
+        settings=Settings(app_env="dev"),
+    )
+    assert set(channels) == {"lexical", "hot"}

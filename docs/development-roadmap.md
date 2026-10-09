@@ -1,14 +1,16 @@
 # 开发顺序与阶段验收
 
-更新：2026-10-09。基线提交：`d5a2709814b4c4b82f27ebf870f60e8e23669195`。本文件决定实施先后，替代旧 [implementation](implementation.md) 的 M0–M10 顺序；[architecture](architecture.md) 仍决定架构，验收执行 [constraints](development-constraints.md)。
+更新：2026-10-09。初始审查基线：`d5a2709814b4c4b82f27ebf870f60e8e23669195`；最新执行裁决见 [项目推进记录](project-progress.md)。本文件决定实施先后，替代旧 [implementation](implementation.md) 的 M0–M10 顺序；[architecture](architecture.md) 仍决定架构，验收执行 [constraints](development-constraints.md)。
 
 ## 1. 项目目标与当前事实
 
 目标是在模块化单体、多租户隔离和完整用户体验的基础上，构建复杂企业文档的证据检索、排序、回答与引用验证闭环。训练和多模态是由实验结果决定的能力，不能因仓库名含 GRPO 就优先实现。
 
-本次源码核对：现有 API/workflow/ingest/train worker 源码、retrieval、memory、8 个迁移和规则测试；尚无 apps/web。标准安装显式包列表未包含 retrieval/memory/ingest/train worker；基础 TenantContext、ORM、vector 读写接口未对齐，train handler 缺失；gateway 仅 StubProvider，writer 默认 hash embedding。SFT/GRPO 辅助函数存在但不构成真实优化循环。
+初始审查发现包注册、身份/ORM/向量接口和任务接线缺口。后续 S0 已恢复标准安装，冻结来源/索引契约，验证任务与索引恢复、默认拒绝 RLS、0001–0012 迁移与本地进程能力；S0 本地退出条件通过，下一阶段是 S1。完整证据和局限见 [最终裁决](project-progress.md#最终本轮裁决s0-本地退出条件通过2026-10-09)。
 
-以上是源码状态，不是最新训练/生产/浏览器实测。前次审查的测试结果属于当时的隔离环境，本次仅调整治理文档，不重新据此认定任何阶段完成。
+尚无 apps/web；真实模型 gateway、完整真实入库/问答、生产签名与成员授权仍未接通。hash 只允许显式测试，普通环境拒绝把它当语义模型；workflow/train 未实现能力明确不可用。SFT/GRPO 辅助函数不构成真实优化循环。
+
+阶段结论限定为已记录的本地环境验收；不代表训练、生产部署、浏览器旅程或真实语义质量通过。下一轮按 [S1 推进指令](next-step-instructions.md) 先复核基线和资源条件，不重复开发已验收的 S0 契约。
 
 用户提供的算法路线和平台对比是目标输入；其中示例指标、简历能力勾选和竞品“未见原生支持”不是本项目实验数据或已经核验的市场事实。未产生真实结果前，只写目标/假设/待验证。
 

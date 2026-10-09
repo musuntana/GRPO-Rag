@@ -31,8 +31,7 @@ from ragos.retrieval.parse.layout import (
 )
 from ragos.retrieval.types import ElementType, ParentUnit
 
-#: From ``ragos.runtime.chunking`` semantics: a cross-language proxy. Kept local
-#: rather than imported so the retrieval package has no runtime dependency.
+#: A cross-language packing proxy; real provider token budgets remain authoritative.
 _SENTENCE_END = ".!?。！？"
 
 

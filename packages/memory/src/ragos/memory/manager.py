@@ -123,7 +123,7 @@ class MemoryManager:
         the tenant's facts.
         """
         owner = self.tenant_ctx.require_user_id() if user_id is None else user_id
-        scope_key = self.tenant_ctx.require_scope_key()
+        scope_key = self.tenant_ctx.require_private_scope_key()
         moment = now or datetime.now(UTC)
 
         candidates = self.fact_store.recall(
@@ -170,7 +170,7 @@ class MemoryManager:
         nothing to retry.
         """
         owner = self.tenant_ctx.require_user_id() if user_id is None else user_id
-        scope_key = self.tenant_ctx.require_scope_key()
+        scope_key = self.tenant_ctx.require_private_scope_key()
         if window_n < 1:
             raise ValidationError(
                 "writeback requires a recorded window_n from a memory profile version",
@@ -210,7 +210,7 @@ class MemoryManager:
         now: datetime | None = None,
     ) -> tuple[list[ExtractedFact], SummaryResult | None]:
         """Extract facts and roll the summary. Called by the worker, not the request."""
-        scope_key = self.tenant_ctx.require_scope_key()
+        scope_key = self.tenant_ctx.require_private_scope_key()
         moment = now or datetime.now(UTC)
 
         facts: list[ExtractedFact] = []

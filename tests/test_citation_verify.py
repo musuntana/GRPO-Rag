@@ -8,10 +8,11 @@ caught, at different layers, for different reasons.
 from __future__ import annotations
 
 import asyncio
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 
 import pytest
 from ragos.retrieval.citation import Citation, CitationStatus, EvidenceSet, bind_markers
+from ragos.retrieval.identity import EvidenceIdentity
 from ragos.retrieval.types import ScoredChunk
 from ragos.retrieval.verify import (
     SemanticVerdict,
@@ -21,9 +22,38 @@ from ragos.retrieval.verify import (
     verify_structural,
 )
 
+SYNTHETIC_TENANT_ID = UUID("00000000-0000-0000-0000-000000000101")
+
+
+def _synthetic_candidate(**fields) -> ScoredChunk:
+    """Explicit synthetic immutable lineage for unit tests, never production data."""
+    doc = fields.get("doc_id") or uuid4()
+    kb = fields.get("kb_id") or UUID("00000000-0000-0000-0000-000000000102")
+    fields.update(doc_id=doc, kb_id=kb)
+    start = fields.get("start_char_idx") or 0
+    fields.setdefault("start_char_idx", start)
+    fields.setdefault("end_char_idx", start + len(fields["text"]))
+    page = fields.get("page_no")
+    count = fields.get("page_count") or 20
+    fields["page_count"] = count if page is not None else None
+    fields["source_identity"] = EvidenceIdentity(
+        tenant_id=SYNTHETIC_TENANT_ID,
+        kb_id=kb,
+        document_id=doc,
+        document_version_id=uuid5(doc, "synthetic-content"),
+        representation_id=uuid5(doc, "synthetic-representation"),
+        index_id=uuid5(doc, "synthetic-index"),
+        chunk_id=fields["chunk_id"],
+        representation_char_count=100000,
+        parent_unit="page" if page is not None else "token_window",
+        page_count=count if page is not None else None,
+    )
+    fields["source_text"] = fields["text"]
+    return ScoredChunk(**fields)
+
 
 def _chunk(text: str, page: int | None = 1, page_count: int = 20) -> ScoredChunk:
-    return ScoredChunk(
+    return _synthetic_candidate(
         chunk_id=uuid4(),
         doc_id=uuid4(),
         kb_id=uuid4(),
@@ -46,6 +76,7 @@ def _evidence(*chunks: ScoredChunk) -> EvidenceSet:
 
 def _citation(chunk: ScoredChunk, claim: str = "a claim", **overrides) -> Citation:
     fields = {
+        "source_identity": chunk.source_identity,
         "chunk_id": chunk.chunk_id,
         "doc_id": chunk.doc_id,
         "page_no": chunk.page_no,
@@ -152,9 +183,7 @@ def test_structural_failure_never_reaches_the_entailment_judge() -> None:
         called.append((claim, text))
         return SemanticVerdict.ENTAILED
 
-    asyncio.run(
-        verify_citations(citations, _evidence(delivered), entailment=tracking_entail)
-    )
+    asyncio.run(verify_citations(citations, _evidence(delivered), entailment=tracking_entail))
 
     assert called == [], "entailment was called for a structurally invalid citation"
 
@@ -200,14 +229,18 @@ def test_marker_indexes_are_one_based_over_delivered_evidence() -> None:
     assert citations[1].chunk_id == second.chunk_id
 
 
-def test_unmarked_claim_is_bound_but_left_unattributed() -> None:
+def test_unmarked_claim_has_no_guessed_source() -> None:
     chunk = _chunk("a")
     evidence = _evidence(chunk)
 
     citations = bind_markers("A claim with no marker.", evidence)
 
     assert citations[0].marker_index == -1
-    assert citations[0].chunk_id == chunk.chunk_id
+    assert citations[0].chunk_id == UUID(int=0)
+    assert citations[0].source_identity is None
+    verified = asyncio.run(verify_citations(citations, evidence))
+    assert verified[0].status == CitationStatus.UNVERIFIED
+    assert verified[0].semantic_verdict == "not_checked"
 
 
 @pytest.mark.parametrize(

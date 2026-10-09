@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from ragos.auth.deps import require_tenant_admin
+from ragos.core.errors import ValidationError
 from ragos.storage.models.app import ChunkManifest, DocumentRecord, KnowledgeBase
 from ragos.storage.repositories.kb import (
-    ChunkManifestRepository,
     DocumentRepository,
     KnowledgeBaseRepository,
 )
 from ragos.storage.repositories.search import SearchTier
-from ragos.storage.repositories.tasks import TaskRepository
 
 from ragos_api.dependencies import DBSession, TenantCtx
 
@@ -84,6 +83,7 @@ def serialize_document(doc: DocumentRecord) -> dict[str, Any]:
         "external_id": doc.external_id,
         "source_uri": doc.source_uri,
         "ingest_status": doc.ingest_status,
+        "active_index_id": str(doc.active_index_id) if doc.active_index_id else None,
         "created_at": doc.created_at.isoformat(),
         "updated_at": doc.updated_at.isoformat(),
     }
@@ -98,6 +98,12 @@ def serialize_manifest(manifest: ChunkManifest) -> dict[str, Any]:
         "chunk_total": manifest.chunk_total,
         "indexing_state": manifest.indexing_state,
         "error_message": manifest.error_message,
+        "document_version_id": str(manifest.document_version_id)
+        if manifest.document_version_id
+        else None,
+        "representation_id": str(manifest.representation_id)
+        if manifest.representation_id
+        else None,
     }
 
 
@@ -185,7 +191,7 @@ def list_documents(
 
 
 # ---------------------------------------------------------------------------
-# Ingest trigger — creates manifest + enqueues ingest_document task atomically
+# Legacy arbitrary-chunk trigger — explicitly unavailable until versioned preparation
 # ---------------------------------------------------------------------------
 
 
@@ -197,45 +203,11 @@ def ingest_document(
     session: DBSession,
     tenant_ctx: TenantCtx,
 ) -> dict[str, Any]:
+    # Preserve resource authorization while the old arbitrary-chunk entry is unavailable.
     with session.begin():
         KnowledgeBaseRepository(session=session, tenant_ctx=tenant_ctx).require_by_id(kb_id)
-        doc_repo = DocumentRepository(session=session, tenant_ctx=tenant_ctx)
-        doc_repo.require_in_kb(document_id, kb_id)
-
-        manifest_repo = ChunkManifestRepository(session=session, tenant_ctx=tenant_ctx)
-        manifest = manifest_repo.create(kb_id=kb_id, document_id=document_id)
-
-        task_repo = TaskRepository(session=session, tenant_ctx=tenant_ctx)
-        chunks_payload = [
-            {
-                "id": str(uuid4()),
-                "kb_id": str(kb_id),
-                "document_id": str(document_id),
-                "parent_chunk_id": (
-                    str(chunk.parent_chunk_id) if chunk.parent_chunk_id else None
-                ),
-                "layer": chunk.layer,
-                "lang": chunk.lang,
-                "title": chunk.title,
-                "headings_text": chunk.headings_text,
-                "body": chunk.body,
-                "tags_text": chunk.tags_text,
-                "metadata_json": chunk.metadata_json,
-            }
-            for chunk in payload.chunks
-        ]
-        task = task_repo.enqueue(
-            kind="ingest_document",
-            payload={
-                "manifest_id": str(manifest.id),
-                "tier": payload.tier.value,
-                "chunks": chunks_payload,
-            },
-            idempotency_key=payload.idempotency_key or f"ingest-{manifest.id}",
+        DocumentRepository(session=session, tenant_ctx=tenant_ctx).require_in_kb(document_id, kb_id)
+        raise ValidationError(
+            "document ingestion unavailable: immutable source preparation and index recovery "
+            "are not connected"
         )
-
-    return {
-        "task_id": str(task.id),
-        "status": task.status,
-        "manifest": serialize_manifest(manifest),
-    }

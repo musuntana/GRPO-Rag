@@ -251,7 +251,7 @@ def test_list_profiles_returns_latest_versions_with_the_scope_key(client: TestCl
     assert resp.status_code == 200
     assert resp.json()["items"]
     calls: _ProfileCalls = client.calls  # type: ignore[attr-defined]
-    assert calls.scope_keys[0].startswith(TENANT_ID)
+    assert calls.scope_keys[0] == f"tenant/{TENANT_ID}"
 
 
 def test_create_profile_validates_before_storing(client: TestClient) -> None:
@@ -354,7 +354,7 @@ def test_a_body_supplied_scope_key_is_refused_even_when_it_matches(client: TestC
         json={
             "query": "q",
             "retriever_profile_id": PROFILE_ID,
-            "scope_key": f"{TENANT_ID}::u_admin",
+            "scope_key": f"tenant/{TENANT_ID}",
         },
     )
 
@@ -388,7 +388,7 @@ def test_a_matching_scope_field_is_discarded_rather_than_honoured(client: TestCl
     assert resp.status_code == 200
     tenant_ctx = _FakeRetrievalService.calls[0]["tenant_ctx"]
     assert str(tenant_ctx.tenant_id) == TENANT_ID
-    assert tenant_ctx.scope_key == f"{TENANT_ID}::u_admin"
+    assert tenant_ctx.scope_key == f"tenant/{TENANT_ID}"
 
 
 def test_a_profile_write_with_a_forged_tenant_id_is_refused(client: TestClient) -> None:

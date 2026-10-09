@@ -3,7 +3,7 @@
 Two design points that are load-bearing rather than incidental.
 
 **The tenant predicate is mandatory and built by the shared builder.** Every
-vector read goes through ``ragos.runtime.vector.build_filter``. A call site that
+vector read goes through ``ragos.storage.vector.build_filter``. A call site that
 assembles predicates by hand can omit ``tenant_id``, and that omission is a
 cross-tenant read.
 
@@ -20,9 +20,10 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 from uuid import UUID
 
-from ragos.core.errors import ProviderError
+from ragos.core.errors import ProviderError, ValidationError
 from ragos.core.logging import get_logger
 from ragos.core.tenant import TenantContext
+from ragos.retrieval.identity import EvidenceIdentity, identity_from_hit
 from ragos.retrieval.types import RetrieverProfile, ScoredChunk
 from ragos.storage.repositories.search import SearchHit, SearchTier
 
@@ -59,7 +60,7 @@ class DenseRecall:
         tier: SearchTier = SearchTier.STABLE,
         filter_builder: FilterBuilder | None = None,
     ) -> None:
-        from ragos.runtime.vector import build_filter
+        from ragos.storage.vector import build_filter
 
         self.client = client
         self.collection = collection
@@ -106,15 +107,34 @@ class DenseRecall:
                 reason=type(exc).__name__,
             ) from exc
 
-        return self._to_chunks(response, scope_key)
+        return self._to_chunks(response, scope_key, tenant_ctx.tenant_id)
 
-    def _to_chunks(self, response: Any, scope_key: str) -> list[ScoredChunk]:
+    def _to_chunks(self, response: Any, scope_key: str, tenant_id: UUID) -> list[ScoredChunk]:
         ordered: list[ScoredChunk] = []
         for point in getattr(response, "points", []) or []:
             payload = point.payload or {}
             chunk_id = as_uuid(payload.get("chunk_id"))
             if chunk_id is None:
-                continue
+                raise ValidationError("vector result has no validated chunk identity")
+            try:
+                identity = EvidenceIdentity.model_validate(
+                    {
+                        "tenant_id": payload.get("tenant_id"),
+                        "kb_id": payload.get("kb_id"),
+                        "document_id": payload.get("doc_id"),
+                        "document_version_id": payload.get("document_version_id"),
+                        "representation_id": payload.get("representation_id"),
+                        "index_id": payload.get("index_id"),
+                        "chunk_id": chunk_id,
+                        "representation_char_count": payload.get("representation_char_count"),
+                        "parent_unit": payload.get("parent_unit"),
+                        "page_count": payload.get("page_count"),
+                    }
+                )
+            except ValueError as exc:
+                raise ValidationError("vector result has no validated source identity") from exc
+            if identity.tenant_id != tenant_id:
+                raise ValidationError("vector result tenant identity does not match")
             ordered.append(
                 ScoredChunk(
                     chunk_id=chunk_id,
@@ -123,6 +143,8 @@ class DenseRecall:
                     # Filled in by hydration below. Empty here is a bug, not a
                     # title: the payload carries no body.
                     text="",
+                    source_identity=identity,
+                    source_text="",
                     score=float(point.score),
                     channel="dense",
                     layer=payload.get("layer", "L1"),
@@ -135,9 +157,11 @@ class DenseRecall:
                 )
             )
 
-        return self._hydrate(ordered, scope_key)
+        return self._hydrate(ordered, scope_key, tenant_id)
 
-    def _hydrate(self, chunks: list[ScoredChunk], scope_key: str) -> list[ScoredChunk]:
+    def _hydrate(
+        self, chunks: list[ScoredChunk], scope_key: str, tenant_id: UUID
+    ) -> list[ScoredChunk]:
         """Fill text from the search schema, preserving Qdrant's ranking."""
         if not chunks:
             return []
@@ -160,29 +184,40 @@ class DenseRecall:
                 # fragment into the answer with a citation pointing at it.
                 missing.append(str(chunk.chunk_id))
                 continue
+            identity = identity_from_hit(hit, tenant_id=tenant_id)
+            if chunk.source_identity != identity or (
+                chunk.doc_id,
+                chunk.kb_id,
+                chunk.parent_chunk_id,
+                chunk.page_no,
+                chunk.start_char_idx,
+                chunk.end_char_idx,
+            ) != (
+                hit.document_id,
+                hit.kb_id,
+                hit.parent_chunk_id,
+                hit.page_no,
+                hit.start_char_idx,
+                hit.end_char_idx,
+            ):
+                raise ValidationError("vector result does not match authoritative source identity")
             hydrated.append(
                 ScoredChunk(
-                    chunk_id=chunk.chunk_id,
-                    doc_id=chunk.doc_id or hit.document_id,
-                    kb_id=chunk.kb_id or hit.kb_id,
+                    chunk_id=hit.chunk_id,
+                    doc_id=hit.document_id,
+                    kb_id=hit.kb_id,
                     text=hit.body,
                     score=chunk.score,
                     channel=chunk.channel,
                     layer=hit.layer,
-                    parent_chunk_id=chunk.parent_chunk_id,
-                    page_no=chunk.page_no if chunk.page_no is not None else hit.page_no,
-                    page_count=(
-                        chunk.page_count if chunk.page_count is not None else hit.page_count
-                    ),
-                    start_char_idx=(
-                        chunk.start_char_idx
-                        if chunk.start_char_idx is not None
-                        else hit.start_char_idx
-                    ),
-                    end_char_idx=(
-                        chunk.end_char_idx if chunk.end_char_idx is not None else hit.end_char_idx
-                    ),
+                    parent_chunk_id=hit.parent_chunk_id,
+                    page_no=hit.page_no,
+                    page_count=hit.page_count,
+                    start_char_idx=hit.start_char_idx,
+                    end_char_idx=hit.end_char_idx,
                     element_type=hit.element_type,
+                    source_identity=identity,
+                    source_text=hit.body,
                 )
             )
 

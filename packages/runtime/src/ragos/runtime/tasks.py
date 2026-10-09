@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+import json
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from types import MappingProxyType
 from typing import Any, Protocol
 from uuid import UUID
 
-from ragos.core.errors import NotFoundError
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from ragos.core.errors import ConflictError, NotFoundError, ValidationError
+from ragos.core.errors import TimeoutError as DomainTimeoutError
 from ragos.core.logging import get_logger
 from ragos.core.tenant import ActorType, TenantContext
-from ragos.runtime.ingest import IngestionService, VectorIndexWriter
+from ragos.runtime.process_runner import ProcessRunner, TaskProcessResult
+from ragos.storage.db import bind_session_tenant
 from ragos.storage.models.app import Task, Tenant
 from ragos.storage.models.base import utc_now
-from ragos.storage.repositories.search import SearchChunkUpsert, SearchTier
 from ragos.storage.repositories.tasks import PlatformTaskRepository, TaskRepository
-from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session
 
 LOGGER = get_logger(__name__)
@@ -37,6 +40,7 @@ class TaskService:
         payload: dict[str, Any],
         idempotency_key: str,
         available_at: datetime | None = None,
+        timeout_seconds: int = 300,
     ) -> Task:
         with self.session.begin():
             task = self.repo.enqueue(
@@ -44,6 +48,7 @@ class TaskService:
                 payload=payload,
                 idempotency_key=idempotency_key,
                 available_at=available_at,
+                timeout_seconds=timeout_seconds,
             )
         return task
 
@@ -51,88 +56,91 @@ class TaskService:
         with self.session.begin():
             return self.repo.claim_next(lease_seconds=lease_seconds, kind=kind)
 
-    def mark_completed(self, task_id: UUID) -> Task:
+    def mark_completed(self, task_id: UUID, *, expected_attempts: int) -> Task:
         with self.session.begin():
-            return self.repo.mark_completed(task_id)
+            return self.repo.mark_completed(task_id, expected_attempts=expected_attempts)
 
-    def mark_failed(self, task_id: UUID, *, retryable: bool) -> Task:
+    def mark_failed(self, task_id: UUID, *, retryable: bool, expected_attempts: int) -> Task:
         with self.session.begin():
-            return self.repo.mark_failed(task_id, retryable=retryable)
+            return self.repo.mark_failed(
+                task_id, retryable=retryable, expected_attempts=expected_attempts
+            )
+
+    def request_cancel(self, task_id: UUID) -> Task:
+        with self.session.begin():
+            return self.repo.request_cancel(task_id)
 
 
-# ---------------------------------------------------------------------------
-# Worker-side task dispatch
-# ---------------------------------------------------------------------------
+# Worker-side task dispatch: short leases, immutable envelope, isolated execution.
 
 
-class TaskHandler(Protocol):
-    """Callable invoked by the worker for a claimed task.
+class ClaimedTaskRef(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    id: UUID
+    tenant_id: UUID
+    kind: str = Field(min_length=1, max_length=64)
+    attempts: int = Field(ge=1, strict=True)
+    lease_until: datetime
+    deadline_at: datetime
 
-    Handlers run inside an open transaction on ``session``; the dispatcher
-    commits the enclosing tx and marks the task ``completed`` if the handler
-    returns normally, or ``retryable`` on exception.
-    """
+    @field_validator("lease_until", "deadline_at")
+    @classmethod
+    def require_aware(cls, value):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("task execution timestamps must be timezone-aware")
+        return value
 
-    def __call__(
-        self,
-        *,
-        task: Task,
-        tenant_ctx: TenantContext,
-        session: Session,
-    ) -> None: ...
+
+class TaskEnvelope(ClaimedTaskRef):
+    payload_json: str = Field(max_length=65536)
+
+    @property
+    def payload(self) -> dict:
+        # Fresh decode; a handler cannot change this envelope by mutating a nested dictionary.
+        return json.loads(self.payload_json)
+
+
+@dataclass(frozen=True, slots=True)
+class TaskCommand:
+    argv: tuple[str, ...]
+    env: Mapping[str, str]
+    replay_safe: bool = False
+
+    def __post_init__(self):
+        object.__setattr__(self, "env", MappingProxyType(dict(self.env)))
+
+
+class TaskCommandBuilder(Protocol):
+    def __call__(self, *, task: TaskEnvelope, tenant_ctx: TenantContext) -> TaskCommand: ...
 
 
 class TaskHandlerRegistry:
-    """Maps task ``kind`` to a handler callable."""
-
     def __init__(self) -> None:
-        self._handlers: dict[str, TaskHandler] = {}
+        self._handlers: dict[str, TaskCommandBuilder] = {}
 
-    def register(self, kind: str, handler: TaskHandler) -> None:
+    def register(self, kind: str, handler: TaskCommandBuilder) -> None:
+        if not kind or kind in self._handlers:
+            raise ValidationError("Task kind must have one server-registered command builder")
         self._handlers[kind] = handler
 
-    def resolve(self, kind: str) -> TaskHandler | None:
+    def resolve(self, kind: str) -> TaskCommandBuilder | None:
         return self._handlers.get(kind)
 
     @property
     def kinds(self) -> tuple[str, ...]:
-        return tuple(self._handlers.keys())
+        return tuple(self._handlers)
 
 
 def build_worker_tenant_ctx(
-    tenant_id: UUID,
-    session: Session,
-    *,
-    trace_id: str,
-    actor_id: str = "workflow-worker",
+    tenant_id: UUID, session: Session, *, trace_id: str, actor_id: str = "task-worker"
 ) -> TenantContext:
-    """Construct a service-level TenantContext for a worker run.
-
-    The worker path mirrors the canonical tenant policy (plan tier, locale,
-    timezone, security level) off the ``app.tenant`` row so background
-    behaviour — quota, model routing, localization, redaction — stays aligned
-    with the request path. Only ``actor_type`` / ``roles`` differ because the
-    caller is a service identity, not an end user.
-    """
     tenant = session.get(Tenant, tenant_id)
     if tenant is None:
-        raise NotFoundError(
-            "Tenant not found",
-            resource="Tenant",
-            id=str(tenant_id),
-        )
-
-    security_level = tenant.security_level
-    if security_level not in _VALID_SECURITY_LEVELS:
-        LOGGER.warning(
-            "tenant.security_level out of range; falling back to 'internal'",
-            extra={
-                "tenant_id": str(tenant_id),
-                "observed": security_level,
-            },
-        )
-        security_level = "internal"
-
+        raise NotFoundError("Tenant not found")
+    if not tenant.is_active:
+        raise ValidationError("Inactive tenant cannot execute tasks")
+    if tenant.security_level not in _VALID_SECURITY_LEVELS:
+        raise ValidationError("Tenant security level is invalid")
     return TenantContext(
         tenant_id=tenant_id,
         tenant_slug=tenant.slug,
@@ -142,223 +150,187 @@ def build_worker_tenant_ctx(
         plan_tier=tenant.plan_tier,
         locale=tenant.locale,
         timezone=tenant.timezone,
-        security_level=security_level,  # type: ignore[arg-type]
+        security_level=tenant.security_level,
         trace_id=trace_id,
     )
 
 
-@dataclass(slots=True)
-class ClaimedTaskRef:
-    """Snapshot of task identity taken immediately after claim commits."""
-
-    id: UUID
-    tenant_id: UUID
-    kind: str
-
-
 def _claim_one(
-    session_factory: Callable[[], Session],
-    *,
-    lease_seconds: int,
-    kind: str | None,
+    session_factory, *, lease_seconds: int, kind: str | None, kinds: tuple[str, ...]
 ) -> ClaimedTaskRef | None:
-    """Tx1 — claim and commit the lease. Row lock is released on commit."""
-    with session_factory() as session:
-        with session.begin():
-            repo = PlatformTaskRepository(session)
-            task = repo.claim_next_any_tenant(lease_seconds=lease_seconds, kind=kind)
-            if task is None:
-                return None
-            return ClaimedTaskRef(id=task.id, tenant_id=task.tenant_id, kind=task.kind)
+    with session_factory() as session, session.begin():
+        task = PlatformTaskRepository(session).claim_next_any_tenant(
+            lease_seconds=lease_seconds, kind=kind, kinds=kinds
+        )
+        if task is None:
+            return None
+        return ClaimedTaskRef(
+            id=task.id,
+            tenant_id=task.tenant_id,
+            kind=task.kind,
+            attempts=task.attempts,
+            lease_until=task.lease_until,
+            deadline_at=task.deadline_at,
+        )
+
+
+def _scoped_transaction(session_factory, tenant_id):
+    from contextlib import contextmanager
+
+    @contextmanager
+    def transaction():
+        with session_factory() as session:
+            bind_session_tenant(session, tenant_id)
+            with session.begin():
+                yield session
+
+    return transaction()
 
 
 def _execute_claimed(
-    session_factory: Callable[[], Session],
+    session_factory,
     ref: ClaimedTaskRef,
     registry: TaskHandlerRegistry,
+    *,
+    runner: ProcessRunner | None = None,
+    lease_seconds: int = 300,
+    shutdown: Callable[[], bool] | None = None,
 ) -> None:
-    """Tx2 — run the handler and mark completed, or tx3 — mark failed.
-
-    The handler tx is opened explicitly *first* so that tenant + task lookups
-    and the handler work all participate in the same transaction. Opening
-    ``session.begin()`` after a read would raise ``InvalidRequestError`` because
-    the session autobegins on the first query.
-    """
     handler = registry.resolve(ref.kind)
-    if handler is None:
+    try:
+        with _scoped_transaction(session_factory, ref.tenant_id) as session:
+            repo = PlatformTaskRepository(session)
+            row = repo.lock_claim(
+                ref.id, expected_attempts=ref.attempts, expected_tenant_id=ref.tenant_id
+            )
+            if row.kind != ref.kind:
+                raise ConflictError("Claimed task kind changed")
+            tenant_ctx = build_worker_tenant_ctx(
+                ref.tenant_id, session, trace_id=f"worker-{ref.id}"
+            )
+            from ragos.storage.artifacts import canonical_json
+
+            envelope = TaskEnvelope(
+                **ref.model_dump(), payload_json=canonical_json(row.payload).decode("utf-8")
+            )
+
+    except Exception as exc:
         LOGGER.warning(
-            "no task handler registered; marking failed",
-            extra={"task_id": str(ref.id), "kind": ref.kind},
+            "task preparation failed",
+            extra={"task_id": str(ref.id), "error_type": type(exc).__name__},
         )
-        with session_factory() as session:
-            with session.begin():
-                PlatformTaskRepository(session).mark_failed(ref.id, retryable=False)
+        _record_terminal(session_factory, ref, TaskProcessResult(None, "TASK_FAILED"))
         return
 
+    # All business execution is outside the preparation transaction and row lock.
+    def cancellation():
+        with _scoped_transaction(session_factory, ref.tenant_id) as session:
+            row = session.get(Task, ref.id)
+            if row is None or row.tenant_id != ref.tenant_id or row.attempts != ref.attempts:
+                raise ConflictError("Task execution fence changed")
+            return row.cancel_requested_at is not None
+
+    def heartbeat():
+        with _scoped_transaction(session_factory, ref.tenant_id) as session:
+            PlatformTaskRepository(session).renew_lease(
+                ref.id,
+                expected_attempts=ref.attempts,
+                expected_tenant_id=ref.tenant_id,
+                lease_seconds=lease_seconds,
+            )
+
+    result = TaskProcessResult(None, "TASK_PROCESS_FAILED")
+    replay_safe = False
     try:
-        with session_factory() as session:
-            with session.begin():
-                tenant_ctx = build_worker_tenant_ctx(
-                    ref.tenant_id,
-                    session,
-                    trace_id=f"worker-{ref.id}",
-                )
-                task_obj = session.get(Task, ref.id)
-                if task_obj is None:
-                    raise NotFoundError(
-                        "Task not found",
-                        resource="Task",
-                        id=str(ref.id),
-                    )
-                handler(task=task_obj, tenant_ctx=tenant_ctx, session=session)
-                PlatformTaskRepository(session).mark_completed(ref.id)
-    except Exception:
-        LOGGER.exception(
-            "task handler raised; marking retryable",
-            extra={"task_id": str(ref.id), "kind": ref.kind},
+        if handler is None:
+            raise ValidationError("Task has no registered process")
+        command = handler(task=envelope, tenant_ctx=tenant_ctx)
+        replay_safe = command.replay_safe
+        remaining = (envelope.deadline_at - utc_now()).total_seconds()
+        if remaining <= 0:
+            result = TaskProcessResult(None, "TASK_TIMEOUT")
+        else:
+            result = (runner or ProcessRunner()).run(
+                command.argv,
+                env=command.env,
+                deadline_seconds=remaining,
+                cancellation=cancellation,
+                heartbeat=heartbeat,
+                heartbeat_interval=max(0.1, min(1.0, lease_seconds / 3)),
+                shutdown=shutdown,
+            )
+    except (TimeoutError, DomainTimeoutError):
+        result = TaskProcessResult(None, "TASK_TIMEOUT")
+    except Exception as exc:
+        LOGGER.warning(
+            "task command failed",
+            extra={"task_id": str(ref.id), "kind": ref.kind, "error_type": type(exc).__name__},
         )
-        # New session — the previous one is in a rolled-back / dirty state.
-        with session_factory() as session:
-            with session.begin():
-                PlatformTaskRepository(session).mark_failed(ref.id, retryable=True)
+    _record_terminal(
+        session_factory,
+        ref,
+        result,
+        retryable=(result.error_code == "TASK_WORKER_STOPPED" and replay_safe),
+    )
+
+
+def _record_terminal(session_factory, ref, result, *, retryable=False):
+    with _scoped_transaction(session_factory, ref.tenant_id) as session:
+        repo = PlatformTaskRepository(session)
+        row = session.get(Task, ref.id)
+        if row is None or row.tenant_id != ref.tenant_id or row.attempts != ref.attempts:
+            return
+        if row.status != "leased":
+            return
+        try:
+            if row.cancel_requested_at is not None:
+                repo.mark_cancelled(
+                    ref.id, expected_attempts=ref.attempts, expected_tenant_id=ref.tenant_id
+                )
+            elif row.deadline_at is not None and row.deadline_at <= utc_now():
+                repo.mark_timed_out(
+                    ref.id, expected_attempts=ref.attempts, expected_tenant_id=ref.tenant_id
+                )
+            elif result.exit_code == 0 and result.error_code is None:
+                repo.mark_completed(
+                    ref.id, expected_attempts=ref.attempts, expected_tenant_id=ref.tenant_id
+                )
+            else:
+                repo.mark_failed(
+                    ref.id,
+                    expected_attempts=ref.attempts,
+                    expected_tenant_id=ref.tenant_id,
+                    retryable=retryable,
+                    error_code=result.error_code,
+                )
+        except ConflictError:
+            LOGGER.info("terminal from stale execution ignored", extra={"task_id": str(ref.id)})
 
 
 def process_one_task(
-    session_factory: Callable[[], Session] | sessionmaker[Session],
+    session_factory,
     registry: TaskHandlerRegistry,
     *,
     lease_seconds: int = 300,
     kind: str | None = None,
+    runner: ProcessRunner | None = None,
+    shutdown: Callable[[], bool] | None = None,
 ) -> bool:
-    """Claim and execute one task. Returns True if a task was processed."""
-    factory: Callable[[], Session] = session_factory  # type: ignore[assignment]
-    ref = _claim_one(factory, lease_seconds=lease_seconds, kind=kind)
+    if isinstance(lease_seconds, bool) or lease_seconds <= 0:
+        raise ValidationError("Lease duration must be positive")
+    if kind is not None and registry.resolve(kind) is None:
+        raise ValidationError("Worker task kind is not registered")
+    if not registry.kinds:
+        return False
+    ref = _claim_one(session_factory, lease_seconds=lease_seconds, kind=kind, kinds=registry.kinds)
     if ref is None:
         return False
-    _execute_claimed(factory, ref, registry)
+    _execute_claimed(
+        session_factory,
+        ref,
+        registry,
+        runner=runner,
+        lease_seconds=lease_seconds,
+        shutdown=shutdown,
+    )
     return True
-
-
-def log_only_handler(
-    *,
-    task: Task,
-    tenant_ctx: TenantContext,
-    session: Session,
-) -> None:
-    """Default stub handler used for smoke tests — just logs."""
-    LOGGER.info(
-        "log_only handler executed",
-        extra={
-            "task_id": str(task.id),
-            "kind": task.kind,
-            "tenant_slug": tenant_ctx.tenant_slug,
-            "payload_keys": list(task.payload.keys()) if task.payload else [],
-        },
-    )
-
-
-# ---------------------------------------------------------------------------
-# ingest_document handler
-# ---------------------------------------------------------------------------
-
-
-def _parse_optional_uuid(value: Any) -> UUID | None:
-    if value is None:
-        return None
-    if isinstance(value, UUID):
-        return value
-    return UUID(str(value))
-
-
-def _parse_optional_datetime(value: Any) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(str(value))
-
-
-def decode_chunk_upsert(
-    raw: dict[str, Any],
-    tenant_ctx: TenantContext,
-) -> SearchChunkUpsert:
-    """Deserialize a JSON chunk payload into a SearchChunkUpsert.
-
-    The handler fixes ``tenant_id`` to the worker's tenant context so a task
-    payload cannot carry a chunk targeted at a different tenant.
-    """
-    return SearchChunkUpsert(
-        id=UUID(str(raw["id"])),
-        tenant_id=tenant_ctx.tenant_id,
-        kb_id=_parse_optional_uuid(raw.get("kb_id")),
-        document_id=_parse_optional_uuid(raw.get("document_id")),
-        parent_chunk_id=_parse_optional_uuid(raw.get("parent_chunk_id")),
-        layer=raw.get("layer", "L1"),
-        lang=raw.get("lang", "simple"),
-        title=raw.get("title"),
-        headings_text=raw.get("headings_text"),
-        body=raw["body"],
-        tags_text=raw.get("tags_text"),
-        metadata_json=raw.get("metadata_json") or {},
-        updated_at=_parse_optional_datetime(raw.get("updated_at")) or utc_now(),
-        expires_at=_parse_optional_datetime(raw.get("expires_at")),
-    )
-
-
-def make_ingest_document_handler(
-    vector_writer: VectorIndexWriter | None = None,
-) -> TaskHandler:
-    """Build an ``ingest_document`` handler bound to a vector writer.
-
-    Expected task payload::
-
-        {
-            "manifest_id": "<uuid>",
-            "tier": "stable" | "hot" | "memory",
-            "chunks": [ {id, body, kb_id, document_id, ...}, ... ]
-        }
-
-    The handler runs inside the worker dispatcher's open transaction; it does
-    NOT start a new one. ``IngestionService.index_chunks`` follows the same
-    rule, so the entire FTS + vector dual-write is atomic with the
-    ``app.task`` state transition.
-    """
-
-    def _handler(
-        *,
-        task: Task,
-        tenant_ctx: TenantContext,
-        session: Session,
-    ) -> None:
-        payload = task.payload or {}
-        try:
-            manifest_id = UUID(str(payload["manifest_id"]))
-            tier = SearchTier(payload.get("tier", SearchTier.STABLE.value))
-            raw_chunks = payload.get("chunks") or []
-        except (KeyError, ValueError) as exc:
-            raise ValueError(f"ingest_document payload invalid: {exc}") from exc
-
-        chunks = [decode_chunk_upsert(c, tenant_ctx) for c in raw_chunks]
-
-        service = IngestionService(
-            session=session,
-            tenant_ctx=tenant_ctx,
-            vector_writer=vector_writer,
-        )
-        result = service.index_chunks(
-            manifest_id=manifest_id,
-            tier=tier,
-            chunks=chunks,
-        )
-        LOGGER.info(
-            "ingest_document handler executed",
-            extra={
-                "task_id": str(task.id),
-                "manifest_id": str(result.manifest_id),
-                "chunk_total": result.chunk_total,
-                "tier": tier.value,
-                "tenant_slug": tenant_ctx.tenant_slug,
-            },
-        )
-
-    return _handler

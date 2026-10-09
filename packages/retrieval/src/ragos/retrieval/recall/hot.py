@@ -12,6 +12,7 @@ return ranked hot chunks under the same tenant scope as everything else.
 from __future__ import annotations
 
 from ragos.core.tenant import TenantContext
+from ragos.retrieval.identity import identity_from_hit
 from ragos.retrieval.types import RetrieverProfile, ScoredChunk
 from ragos.storage.repositories.search import SearchRepository, SearchTier
 
@@ -50,6 +51,8 @@ class HotTierRecall:
                 start_char_idx=hit.start_char_idx,
                 end_char_idx=hit.end_char_idx,
                 element_type=hit.element_type,
+                source_identity=identity_from_hit(hit, tenant_id=tenant_ctx.tenant_id),
+                source_text=hit.body,
             )
             for hit in hits
         ]

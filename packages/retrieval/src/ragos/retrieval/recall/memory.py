@@ -39,7 +39,7 @@ class MemoryRecall:
         tenant_ctx: TenantContext,
         profile: RetrieverProfile,
     ) -> list[ScoredChunk]:
-        scope_key = tenant_ctx.require_scope_key()
+        scope_key = tenant_ctx.require_private_scope_key()
         user_id = tenant_ctx.require_user_id()
 
         hits = self.repo.search(

@@ -95,47 +95,10 @@ class VisionRecall:
             LOGGER.debug("vision recall disabled for this profile; skipping")
             return []
 
-        from ragos.runtime.vector import build_filter
-
-        scope_key = tenant_ctx.require_scope_key()
-        if "vision" not in retriever_profile.channel_budgets:
-            LOGGER.warning(
-                "vision recall skipped: profile has no vision budget",
-                extra={"trace_id": tenant_ctx.trace_id},
-            )
-            return []
-
-        query_filter = build_filter(
-            scope_key,
-            kb_ids=tenant_ctx.allowed_kb_ids,
-            brand_ids=[tenant_ctx.brand_id] if tenant_ctx.brand_id else None,
+        tenant_ctx.require_scope_key()
+        raise ValidationError(
+            "vision recall unavailable: authoritative representation hydration is not connected"
         )
-        response = self.client.query_points(
-            collection_name=self.profile.collection,
-            query=self.profile.embed(query),
-            query_filter=query_filter,
-            limit=retriever_profile.top_k_recall,
-            with_payload=True,
-        )
-
-        out: list[ScoredChunk] = []
-        for point in response.points:
-            payload = point.payload or {}
-            out.append(
-                ScoredChunk(
-                    chunk_id=_as_uuid(payload.get("chunk_id")),
-                    doc_id=_as_uuid(payload.get("doc_id")),
-                    kb_id=_as_uuid(payload.get("kb_id")),
-                    text=payload.get("caption") or "",
-                    score=float(point.score),
-                    channel="vision",
-                    layer=payload.get("layer", "L1"),
-                    page_no=payload.get("page_no"),
-                    page_count=payload.get("page_count"),
-                    element_type="figure",
-                )
-            )
-        return out
 
 
 @dataclass(slots=True)

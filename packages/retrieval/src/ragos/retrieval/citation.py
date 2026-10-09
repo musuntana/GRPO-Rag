@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from uuid import UUID
 
+from ragos.retrieval.identity import EvidenceIdentity
 from ragos.retrieval.types import ScoredChunk
 
 
@@ -48,6 +49,9 @@ class Citation:
     element_type: str = "text"
     status: CitationStatus = CitationStatus.UNVERIFIED
     status_reason: str | None = None
+    source_identity: EvidenceIdentity | None = None
+    structural_verdict: str = "not_checked"
+    semantic_verdict: str = "not_checked"
 
     #: 1-based index into the delivered evidence, or ``-1`` when the claim
     #: carried no marker. Retained so an out-of-range marker is detectable
@@ -72,6 +76,9 @@ class Citation:
             "status": self.status.value,
             "status_reason": self.status_reason,
             "marker_index": self.marker_index,
+            "source_identity": self.source_identity.to_dict() if self.source_identity else None,
+            "structural_verdict": self.structural_verdict,
+            "semantic_verdict": self.semantic_verdict,
         }
 
 
@@ -99,7 +106,7 @@ class ExtractedClaim:
 
 def find_marker(sentence: str) -> int:
     """Return the 1-based evidence marker in a sentence, or ``-1``."""
-    for pattern in _MARKER_PATTERNS:
+    for pattern in _MARKER_PATTERNS[:2]:
         match = pattern.search(sentence)
         if match is not None:
             return int(match.group(1))
@@ -141,9 +148,9 @@ def bind_markers(
     """Build citations from an answer and the evidence actually delivered.
 
     ``marker_index`` is 1-based over the evidence list, so ``[3]`` names the
-    third item the generator was given. A marker outside that range falls back
-    to the first item and stays ``unverified``, which structural verification
-    catches — a marker pointing at a page that was never in the context is
+    third item the generator was given. A marker outside that range remains
+    unbound and ``unverified``. Structural verification catches a marker pointing
+    at a page that was never in the context; this is
     exactly the hallucinated-citation case, and silently binding it to
     *something* would hide it.
     """
@@ -163,27 +170,32 @@ def bind_markers(
             marker_index = int(match.group(1))
             break
 
+        explicit_chunk = find_chunk_marker(text)
         out_of_range: int | None = None
-        if marker_index is not None and 1 <= marker_index <= len(items):
-            src = items[marker_index - 1]
-        elif marker_index is not None:
-            # Marker named an item past the end of the delivered set. Bound to
-            # the first item only so the span is renderable; the out-of-range
-            # marker is recorded and structural verification rejects it.
-            src = items[0] if items else None
-            out_of_range = len(items)
-        else:
-            src = items[0] if items else None
+        src = None
+        if marker_index is not None:
+            if 1 <= marker_index <= len(items):
+                src = items[marker_index - 1]
+            else:
+                out_of_range = len(items)
+        elif explicit_chunk is not None:
+            for index, item in enumerate(items, start=1):
+                if item.chunk_id == explicit_chunk:
+                    src = item
+                    marker_index = index
+                    break
+        # A missing/unknown marker has no source. Never bind a guess to item 1.
 
         citations.append(
             Citation(
-                chunk_id=src.chunk_id if src else UUID(int=0),
+                chunk_id=src.chunk_id if src else (explicit_chunk or UUID(int=0)),
                 doc_id=src.doc_id if src else None,
                 page_no=src.page_no if src else None,
                 start_char_idx=src.start_char_idx if src else None,
                 end_char_idx=src.end_char_idx if src else None,
                 claim=text,
-                text=src.text if src else "",
+                text=(src.source_text if src.source_text is not None else src.text) if src else "",
+                source_identity=src.source_identity if src else None,
                 score=src.score if src else 0.0,
                 element_type=src.element_type if src else "text",
                 marker_index=marker_index if marker_index is not None else -1,

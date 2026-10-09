@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from ragos.core.errors import ValidationError
 from ragos.retrieval.types import FusionConfig, ScoredChunk
 
 
@@ -56,6 +57,8 @@ def _apply_boosts(
                 start_char_idx=chunk.start_char_idx,
                 end_char_idx=chunk.end_char_idx,
                 element_type=chunk.element_type,
+                source_identity=chunk.source_identity,
+                source_text=chunk.source_text,
                 rerank_score=chunk.rerank_score,
             )
         )
@@ -99,6 +102,8 @@ def _rrf(channels: Mapping[str, list[ScoredChunk]], k: int) -> list[ScoredChunk]
                 start_char_idx=source.start_char_idx,
                 end_char_idx=source.end_char_idx,
                 element_type=source.element_type,
+                source_identity=source.source_identity,
+                source_text=source.source_text,
             )
         )
     fused.sort(key=lambda c: c.score, reverse=True)
@@ -127,6 +132,8 @@ def _weighted(channels: Mapping[str, list[ScoredChunk]]) -> list[ScoredChunk]:
             start_char_idx=merged[cid].start_char_idx,
             end_char_idx=merged[cid].end_char_idx,
             element_type=merged[cid].element_type,
+            source_identity=merged[cid].source_identity,
+            source_text=merged[cid].source_text,
         )
         for cid, score in scores.items()
     ]
@@ -169,6 +176,8 @@ def _distribution_based(
                 start_char_idx=c.start_char_idx,
                 end_char_idx=c.end_char_idx,
                 element_type=c.element_type,
+                source_identity=c.source_identity,
+                source_text=c.source_text,
             )
             for c in channel_chunks
         ]
@@ -196,6 +205,13 @@ class Fusioner:
         channels: Mapping[str, list[ScoredChunk]],
         config: FusionConfig,
     ) -> list[ScoredChunk]:
+        identities = {}
+        for chunks in channels.values():
+            for chunk in chunks:
+                lineage = (chunk.source_identity, chunk.source_text)
+                if chunk.chunk_id in identities and identities[chunk.chunk_id] != lineage:
+                    raise ValidationError("same chunk id has conflicting evidence lineage")
+                identities[chunk.chunk_id] = lineage
         active = {name: chunks for name, chunks in channels.items() if chunks}
         if not active:
             return []

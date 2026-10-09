@@ -18,6 +18,7 @@ from ragos.core.errors import NotFoundError
 from ragos.retrieval.citation import Citation, CitationStatus
 from ragos.retrieval.pipeline import RAGResult, RetrievalExplain
 from ragos.retrieval.types import RetrieverProfile, ScoredChunk
+from ragos.runtime import chat_history
 from ragos.runtime.chat import ChatDependencies
 from ragos.runtime.events import EventLog, EventSink
 from ragos_api.dependencies import get_db_session
@@ -220,6 +221,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
         lambda session, tenant_ctx: messages.conversations,
     )
     monkeypatch.setattr(chat_route, "MessageRepository", lambda session, tenant_ctx: messages)
+    monkeypatch.setattr(chat_history, "MessageRepository", lambda session, tenant_ctx: messages)
     monkeypatch.setattr(
         chat_route, "FeedbackRepository", lambda session, tenant_ctx: _FakeFeedback(messages)
     )

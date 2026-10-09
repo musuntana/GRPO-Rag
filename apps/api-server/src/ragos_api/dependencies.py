@@ -8,8 +8,7 @@ from ragos.auth.deps import get_auth_claims
 from ragos.auth.jwt import AuthClaims
 from ragos.core.errors import ValidationError
 from ragos.core.tenant import TenantContext
-from ragos.storage.db import get_session_factory
-from sqlalchemy import text
+from ragos.storage.db import bind_session_tenant, get_session_factory
 from sqlmodel import Session
 
 
@@ -25,10 +24,7 @@ def get_db_session(request: Request) -> Iterator[Session]:
     with session_factory() as session:
         rls_tenant_id = getattr(request.state, "rls_tenant_id", None)
         if rls_tenant_id is not None:
-            session.execute(
-                text("SELECT set_config('app.current_tenant_id', :tid, true)"),
-                {"tid": str(rls_tenant_id)},
-            )
+            bind_session_tenant(session, rls_tenant_id)
         yield session
 
 

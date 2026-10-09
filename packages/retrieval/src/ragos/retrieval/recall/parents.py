@@ -16,8 +16,10 @@ from dataclasses import dataclass, field
 from typing import Protocol
 from uuid import UUID
 
+from ragos.core.errors import ValidationError
 from ragos.core.logging import get_logger
 from ragos.core.tenant import TenantContext
+from ragos.retrieval.identity import identity_from_hit
 from ragos.retrieval.types import ScoredChunk
 from ragos.storage.repositories.search import SearchRepository, SearchTier
 
@@ -86,9 +88,22 @@ class SearchParentResolver:
                 start_char_idx=hit.start_char_idx,
                 end_char_idx=hit.end_char_idx,
                 element_type=hit.element_type,
+                source_identity=identity_from_hit(hit, tenant_id=tenant_ctx.tenant_id),
+                source_text=hit.body,
             )
             for hit in hits
         }
+
+        for child in chunks:
+            parent = parents.get(child.parent_chunk_id)
+            if parent is None:
+                continue
+            child_identity = child.require_source_identity()
+            parent_identity = parent.require_source_identity()
+            child_lineage = child_identity.model_dump(exclude={"chunk_id"})
+            parent_lineage = parent_identity.model_dump(exclude={"chunk_id"})
+            if child_lineage != parent_lineage:
+                raise ValidationError("parent and child evidence source identity do not match")
 
         counts = self.repo.count_children(
             tier=self.tier, scope_key=scope_key, parent_ids=list(parents)

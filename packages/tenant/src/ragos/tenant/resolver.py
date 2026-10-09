@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import Request
 from ragos.auth.jwt import AuthClaims
-from ragos.core.errors import ValidationError
+from ragos.core.errors import PermissionDeniedError, ValidationError
 from ragos.core.tenant import TenantContext
 
 if TYPE_CHECKING:
@@ -18,7 +18,10 @@ def resolve_tenant_context(
     trace_id: str,
     session: Session | None = None,
 ) -> TenantContext:
-    tenant_id = request.headers.get("X-Tenant-Id") or claims.tenant_id
+    header_tenant = request.headers.get("X-Tenant-Id")
+    if header_tenant and header_tenant != claims.tenant_id:
+        raise PermissionDeniedError("tenant header does not match authenticated tenant")
+    tenant_id = claims.tenant_id
 
     # Domain-based resolution: derive tenant from Host header when
     # neither X-Tenant-Id nor JWT claim provides a tenant identifier.
@@ -40,7 +43,7 @@ def resolve_tenant_context(
     if not tenant_id:
         raise ValidationError("Missing tenant identifier")
 
-    tenant_slug = request.headers.get("X-Tenant-Slug") or claims.tenant_slug or tenant_id
+    tenant_slug = claims.tenant_slug or tenant_id
 
     return TenantContext(
         tenant_id=tenant_id,
@@ -53,3 +56,13 @@ def resolve_tenant_context(
         timezone=claims.timezone,
         trace_id=trace_id,
     )
+
+
+def resolve_actor_user_id(session: Session, tenant_ctx: TenantContext):
+    """Resolve a local user primary key inside the actor's authorized tenant."""
+    from ragos.storage.repositories.users import UserRepository
+
+    user = UserRepository(session, tenant_ctx).get_by_external_id(tenant_ctx.actor_id)
+    if user is None or not user.is_active:
+        return None
+    return user.id
