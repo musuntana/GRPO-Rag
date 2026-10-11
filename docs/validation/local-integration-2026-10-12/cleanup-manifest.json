@@ -1,0 +1,174 @@
+{
+  "schema": "ragos/local-integration-cleanup-manifest/1",
+  "generated_utc": "2026-10-11T23:40:00Z",
+  "purpose": "Record actual S1 local merge, independent-review summary, test/lint/whitespace facts and the bounded FS cleanup that preceded maintenance commit E. References existing release archives as authoritative evidence; does not introduce a new framework.",
+  "repo": "/home/avaarg/GRPO-Rag",
+  "feature_worktree": "/home/avaarg/.local/share/grpo-rag/worktrees/s1-local-20261012",
+  "baseline_verified": {
+    "main_head": "e244035d1164ddccb0b8e7562258c5e5484332e2",
+    "feature_head": "e244035d1164ddccb0b8e7562258c5e5484332e2",
+    "shared_tree": "0257ef938aac95bede8b946ff77391291792f401",
+    "main_status_clean": true,
+    "feature_worktree_status_clean": true
+  },
+  "commits": {
+    "base": {
+      "sha": "f0914adf7d97dc0271f80ba3e1db79dccdd44f99",
+      "tree": "089c467d5ed9d68ef0d6b382ba395bfcb03b07db",
+      "message": "S0 verified baseline"
+    },
+    "a": {
+      "sha": "841f9765477e26608d2670243d6f7f077e82588e",
+      "tree": "e7c6c96a84a537a08b9daaf0ca533b884bb7773d",
+      "message": "feat(s1): enforce model-profile authorization boundary + explicit stub gate + char evidence budget"
+    },
+    "b": {
+      "sha": "200eb817da236dcb68c88f17e014d54c466037b9",
+      "tree": "c2d17414f6b0d3f22fb5151b8e9b05e2ae22df56",
+      "message": "feat(s1.1): require provider admission before key acquisition"
+    },
+    "c": {
+      "sha": "cef5e7a7c8adb5bddbcebe89e8e2f8615513d930",
+      "tree": "b3a5790e64a49096b1e359b3529bfda03a3633fe",
+      "message": "feat(s1.3): refuse raw credential intake; whitelist model-center 422 fields"
+    },
+    "d": {
+      "sha": "e244035d1164ddccb0b8e7562258c5e5484332e2",
+      "tree": "0257ef938aac95bede8b946ff77391291792f401",
+      "message": "docs: archive immutable S1 RC evidence"
+    },
+    "e": {
+      "sha": "recorded externally in release/.../cleanup logs; no self-reference inside committed manifest",
+      "tree": "see external release/cleanup logs",
+      "message": "chore: retire stale S1 handoff and record local integration",
+      "type": "docs-only maintenance commit"
+    }
+  },
+  "local_merge": {
+    "method": "git merge --ff-only feat/grpo-rag-platform-v1",
+    "result": "Updating f0914adf7d97..e244035d1164 Fast-forward",
+    "exit": 0,
+    "main_head_after": "e244035d1164ddccb0b8e7562258c5e5484332e2",
+    "main_tree_after": "0257ef938aac95bede8b946ff77391291792f401",
+    "ahead_of_origin": 4,
+    "pushed": false,
+    "pr_created": false,
+    "second_merge": false,
+    "reflog_top": "merge feat/grpo-rag-platform-v1: Fast-forward"
+  },
+  "tests": {
+    "author_full_suite": {
+      "passed": 832,
+      "skipped": 21,
+      "exit": 0,
+      "source_log": "external release commit-validation/23-pytest-full.txt (author actual run)"
+    },
+    "pg_integration_skips": {
+      "count": 21,
+      "reason": "RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB (DSN unset)",
+      "detail": "tests/test_index_integration.py 11, tests/test_storage_integration.py 10",
+      "counted_as_passed": false
+    },
+    "installed_vs_worktree": {
+      "checked_py_files": 170,
+      "INSTALLED_SHA_OK": true
+    },
+    "rerun_for_e": {
+      "ran": false,
+      "reason": "E contains no Python change; not presented as a re-run"
+    }
+  },
+  "independent_review": {
+    "reviewer": "Codex (independent)",
+    "verdict": "LOCAL PASS; no commit/merge/push/merge/S1.4/R1 authority inferred",
+    "targeted_c_regression": {
+      "passed": 98,
+      "suites": "test_secret_intake, test_model_center_route, test_provider_admission, test_model_gateway, test_model_profile_authorization, test_provider_capability, test_gateway_evidence_budget"
+    },
+    "summary_paths": [
+      "docs/validation/s1-3-secret-intake/codex-review.md (committed in B)",
+      "release raw-evidence/bundle/codex-review.md (sha 216a5c40...)",
+      "release raw-evidence/bundle/codex-composition-review.json (sha 42fdf4f9...)",
+      "release raw-evidence/reports/s1-3-codex-review.md (sha 560571a6...)"
+    ]
+  },
+  "lint": {
+    "whole_repo_ruff": {
+      "errors": 117,
+      "e501": 116,
+      "i001": 1,
+      "locations": [
+        "infra/migrations/versions/0001_pg_scaffold.py",
+        "infra/migrations/versions/0004_model_gateway.py",
+        "infra/migrations/versions/0005_page_anchored_eval.py"
+      ],
+      "pre_existing": true,
+      "new_this_round": 0
+    },
+    "targeted_ruff": "All checks passed!"
+  },
+  "whitespace_diffcheck": {
+    "c_vs_base_exit": 2,
+    "c_vs_base_offending_lines": 16,
+    "c_vs_base_detail": "12 lines red-run.txt + 4 lines rework-red-run.txt (historical bytes preserved in RC archive)",
+    "d_vs_base_exit": 0,
+    "d_vs_c_exit": 0,
+    "e_staged_exit": 0
+  },
+  "cleanup": {
+    "scope": "shared main worktree /home/avaarg/GRPO-Rag only; gitignored + untracked; no symlink follow; no install env/dependency cache/source/model/secret/other repo/branch; /tmp/opencode untouched; feature worktree untouched",
+    "deleted": {
+      "build": { "files": 119, "bytes_apparent": 639115 },
+      ".pytest_cache": { "files": 5, "bytes_apparent": 77404 },
+      ".ruff_cache": { "files": 38, "bytes_apparent": 19748 },
+      "__pycache___under_apps_packages_tests_scripts": { "dirs": 22, "files": 361, "bytes_apparent": 6532052 }
+    },
+    "totals": { "files": 523, "bytes_apparent": 7268319 },
+    "note": "apparent bytes removed; not a performance benchmark; does not guarantee immediate disk reclaim",
+    "tmp_targets_authorized": {
+      "status": "all 8 paths already absent at verify time, including /tmp/grpo-rag-commit-prep-current symlink",
+      "paths": [
+        "/tmp/grpo-rag-commit-prep-20261011",
+        "/tmp/grpo-rag-commit-prep-current (symlink)",
+        "/tmp/grpo-rag-rc-packaging-20261011",
+        "/tmp/grpo-rag-rc-freeze-dml3y8hb",
+        "/tmp/grpo-rag-rc-freeze-x51e4_vf",
+        "/tmp/grpo-rag-packaging-review-cvpw6ntt",
+        "/tmp/grpo-rag-packaging-review-cvpw6ntt-extract",
+        "/tmp/grpo-rag-packaging-review-cvpw6ntt-result.json"
+      ]
+    },
+    "left_untouched": [
+      "infra/migrations/__pycache__ and infra/migrations/versions/__pycache__ (outside authorized roots)",
+      "ragos.egg-info/ (not in authorized list)",
+      "docs/ (historical reports, ADRs, architecture retained)",
+      "external release backup /home/avaarg/.local/share/grpo-rag/releases/s1-local-20261011T161256Z/ (all contents preserved)"
+    ],
+    "pre_delete_checks": {
+      "active_proc_refs_to_targets": "none (cwd/exe/fd/maps scanned)",
+      "git_tracked_within_targets": "none",
+      "gitignored": "all targets pass git check-ignore",
+      "registered_worktrees_conflict": "none"
+    }
+  },
+  "not_run": [
+    "real provider (Qwen/OpenAI) calls",
+    "PostgreSQL/RLS live-database verification",
+    "Qdrant server journey",
+    "browser/UI journey",
+    "migration execution",
+    "S1.4 / R1 (R1 still blocked)",
+    "feature worktree removal (deferred to Codex after E merge)",
+    "832-suite re-run for E (no Python change)"
+  ],
+  "release_evidence": {
+    "in_repo": [
+      "docs/validation/s1-release-candidate-2026-10-11/manifest.sha256 (-c: 8/8 OK, self-excluded)",
+      "docs/validation/s1-release-candidate-2026-10-11/raw-evidence.tar.gz (85/85 members OK, 96 tar entries, re-verified)",
+      "docs/validation/s1-release-candidate-2026-10-11/patches/{A,B,C}.patch.gz (gzip -dc SHA equal original f5438412/5fdd7fa6/9527418e, re-verified)",
+      "docs/validation/s1-release-candidate-2026-10-11/{replay-report,test-matrix}.md"
+    ],
+    "external_backup": "/home/avaarg/.local/share/grpo-rag/releases/s1-local-20261011T161256Z/ including approval/D.patch sha256 0639d51445c620f653f5b502604a6c0f0158a5b721e15310a23e9ddde6b3f7be, commit-validation/, local-merge/, independent-review/, cleanup/ (preserved, not deleted)"
+  },
+  "post_commit_verification_logs": "external release/.../cleanup/ logs record E SHA and post-E checks (source/test/schema/lock blobs and modes identical to D; frozen release dir tree unchanged; new doc links resolve; staged whitespace 0; feature clean; main remains D clean with only ignored caches removed)"
+}
