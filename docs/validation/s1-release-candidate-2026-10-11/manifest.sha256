@@ -1,0 +1,15 @@
+# manifest.sha256 — sha256 of every file in this directory EXCEPT this file itself.
+# This file (manifest.sha256) is intentionally NOT listed here (no self-reference).
+# raw-members.sha256 holds the per-member digests of raw-evidence.tar.gz.
+# patches/*.patch.gz are deterministic gzip wrappers: each line below is the sha256
+#   of the .gz FILE ITSELF. The original A/B/C patch SHA is the SHA after gzip -dc
+#   (f5438412… A, 5fdd7fa6… B, 9527418e… C); see README.md.
+#
+8c00ffdc03a2a7db98cc3a049469ccd8ec0e2082abbf6c8c64fea7a1033acee4  README.md
+bfee2b7abf1027212cf6b3c15aa70a59c97f472af4824081b64efacf68c5fc42  patches/A.patch.gz
+00639832ed31ab1202b8e0468fc1980861f2003daf078b8b1031c5ff75548925  patches/B.patch.gz
+a3c93a8f9252fa8ad8fee24636e04fdb655ca8230cc9a19c5388f4d77a9a7648  patches/C.patch.gz
+7466b0e8b40ea7ca75a597d7084b1a0b69d1d1bccb639a6684ea80548fdb2201  raw-evidence.tar.gz
+4bcf395f1eab50ebb310343ebbab557b43c16f8ef9971556af8d9a9f9f18374f  raw-members.sha256
+227adf296ccc5cef4df2c30ff74ae9f72f3a0c97f7856b65c0237bdb3032660d  replay-report.md
+424ea5bbbb004ff32dacf035904a60054a33aa8f8b1c0d6ba7319acc84448ffc  test-matrix.md
