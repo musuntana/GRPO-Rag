@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from ragos.core.errors import ProviderError
+from ragos.core.errors import NotFoundError, ProviderError
 from ragos.core.logging import get_logger
 from ragos.model_gateway.providers import BaseProvider
 from ragos.storage.models.app import KeyPool
@@ -12,6 +12,9 @@ from ragos.storage.repositories.base import PlatformRepository
 from sqlmodel import Session
 
 LOGGER = get_logger(__name__)
+
+UNAVAILABLE_MESSAGE = "Model provider unavailable"
+TEST_STUB_TYPE = "stub"
 
 
 @dataclass(slots=True)
@@ -38,15 +41,26 @@ class KeyPoolManager:
         self._provider_repo = PlatformRepository(session=session, model_type=ProviderModel)
         self._round_robin: dict[UUID, int] = {}
 
+    def admit_provider(self, provider_id: UUID) -> None:
+        """Refuse an unavailable provider before any key is read.
+
+        Reads only the provider configuration row. Missing, inactive, unconnected
+        provider types and stubs without explicit test opt-in are all refused with
+        the same generic error, so the response never reveals which condition held.
+        """
+        provider = self._provider_repo.get_by_id(provider_id)
+        if provider is None or not provider.is_active:
+            raise ProviderError(UNAVAILABLE_MESSAGE)
+        if not self._is_connected(provider.provider_type):
+            raise ProviderError(UNAVAILABLE_MESSAGE)
+
     def acquire_key(self, provider_id: UUID) -> KeyLease:
         """Select the next active key for *provider_id* by weighted
         round-robin. Raises ``ProviderError`` if no active keys exist."""
+        provider = self._require_provider(provider_id)
         keys = self._list_active_keys(provider_id)
         if not keys:
-            raise ProviderError(
-                "No active keys available for provider",
-                provider_id=str(provider_id),
-            )
+            raise ProviderError("No active keys available for provider")
 
         weights = [k.weight for k in keys]
         total = sum(weights)
@@ -61,7 +75,6 @@ class KeyPoolManager:
 
         self._round_robin[provider_id] = (idx + 1) % total
 
-        provider = self._provider_repo.require_by_id(provider_id)
         return KeyLease(
             key_id=chosen.id,
             provider_type=provider.provider_type,
@@ -98,6 +111,15 @@ class KeyPoolManager:
         self.session.add(key)
         self.session.flush()
 
+    def _is_connected(self, provider_type: str) -> bool:
+        return self._allow_test_stub and provider_type == TEST_STUB_TYPE
+
+    def _require_provider(self, provider_id: UUID) -> ProviderModel:
+        try:
+            return self._provider_repo.require_by_id(provider_id)
+        except NotFoundError:
+            raise ProviderError(UNAVAILABLE_MESSAGE) from None
+
     def _list_active_keys(self, provider_id: UUID) -> list[KeyPool]:
         from sqlmodel import select as sql_select
 
@@ -110,10 +132,8 @@ class KeyPoolManager:
 
     def build_provider(self, lease: KeyLease) -> BaseProvider:
         """Refuse unconnected capabilities; a stub is explicit test data only."""
-        if not self._allow_test_stub or lease.provider_type != "stub":
-            raise ProviderError(
-                "Model provider unavailable: real adapter and controls not connected"
-            )
+        if not self._is_connected(lease.provider_type):
+            raise ProviderError(UNAVAILABLE_MESSAGE)
         from ragos.model_gateway.providers.stub import StubProvider
 
         # Stub execution must never receive a stored encrypted key or network URL.

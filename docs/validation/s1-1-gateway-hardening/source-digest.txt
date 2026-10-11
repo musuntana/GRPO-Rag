@@ -1,0 +1,14 @@
+# sha256 of S1.1 source files (working tree)
+244dc7fd4973c9ef162ec36958bced052f3c51d670dd53208813dd58e37b3a3d  packages/model-gateway/src/ragos/model_gateway/router.py
+a0afade5edad2a0be07a9e4c35e3d7afc509871f3a2a9a1750388bb30a689c5c  packages/model-gateway/src/ragos/model_gateway/key_pool.py
+6e94f95f77ad862c1aef7cc5674961c1a458a4a312fc1ca6f9f342efb71b516c  tests/test_provider_admission.py
+# sha256 of installed package copies (site-packages)
+244dc7fd4973c9ef162ec36958bced052f3c51d670dd53208813dd58e37b3a3d  /tmp/opencode/s1-1/venv/lib/python3.11/site-packages/ragos/model_gateway/router.py
+a0afade5edad2a0be07a9e4c35e3d7afc509871f3a2a9a1750388bb30a689c5c  /tmp/opencode/s1-1/venv/lib/python3.11/site-packages/ragos/model_gateway/key_pool.py
+# snapshot tree digest (git ls-files -co --exclude-standard, sorted)
+0f5cecdd5c5606fdc22e5b0f946cd2e3eb2127881b7a594b6cbcdfa956806759  -
+# frozen requirements (uv export --frozen from uv.lock)
+8cc2b4466cf831136877a340c8e7f57157dcfe90416375e4849ea5735099a042  /tmp/opencode/s1-1/requirements.lock.txt
+# lock files unchanged vs HEAD
+uv.lock, pyproject.toml: unchanged
+Python 3.11.17

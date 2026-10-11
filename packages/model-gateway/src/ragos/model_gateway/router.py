@@ -20,14 +20,15 @@ class ModelRouter:
 
         tenant_binding → profile → provider → key → provider instance
 
-    Authorization precedes key acquisition and provider construction. Calls
-    use a single resolved route; retries and fallback traversal are not applied.
+    Authorization precedes provider admission, which precedes key acquisition and
+    provider construction. Calls use a single resolved route; retries and fallback
+    traversal are not applied.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, allow_test_stub: bool = False) -> None:
         self._session = session
         self._profiles = ProfileResolver(session)
-        self._keys = KeyPoolManager(session)
+        self._keys = KeyPoolManager(session, allow_test_stub=allow_test_stub)
 
     def resolve(
         self,
@@ -46,6 +47,7 @@ class ModelRouter:
             use_case=use_case,
             profile_override=profile_override,
         )
+        self._keys.admit_provider(profile.provider_id)
         lease = self._keys.acquire_key(profile.provider_id)
         provider = self._keys.build_provider(lease)
 

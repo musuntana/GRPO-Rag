@@ -1,0 +1,8 @@
+# git diff --check
+exit=0
+# ruff check (changed S1.1 files)
+All checks passed!
+exit=0
+# ruff format --check
+3 files already formatted
+exit=0

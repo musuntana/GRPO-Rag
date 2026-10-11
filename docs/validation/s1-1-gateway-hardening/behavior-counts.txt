@@ -1,0 +1,36 @@
+[A disabled provider]
+  outcome: {"error": {"code": "PROVIDER_ERROR", "message": "Model provider unavailable", "details": {}}}
+  acquire_key calls: 0
+  provider SELECTs: 1
+  key_pool SELECTs (key reads): 0
+  round_robin unchanged: True
+[A unconnected provider type]
+  outcome: {"error": {"code": "PROVIDER_ERROR", "message": "Model provider unavailable", "details": {}}}
+  acquire_key calls: 0
+  provider SELECTs: 1
+  key_pool SELECTs (key reads): 0
+  round_robin unchanged: True
+[A stub without opt-in]
+  outcome: {"error": {"code": "PROVIDER_ERROR", "message": "Model provider unavailable", "details": {}}}
+  acquire_key calls: 0
+  provider SELECTs: 1
+  key_pool SELECTs (key reads): 0
+  round_robin unchanged: True
+[A missing provider]
+  outcome: {"error": {"code": "PROVIDER_ERROR", "message": "Model provider unavailable", "details": {}}}
+  acquire_key calls: 0
+  provider SELECTs: 1
+  key_pool SELECTs (key reads): 0
+  round_robin unchanged: True
+[B admitted, no active key]
+  outcome: {"error": {"code": "PROVIDER_ERROR", "message": "No active keys available for provider", "details": {}}}
+  acquire_key calls: 1
+  provider SELECTs: 2
+  key_pool SELECTs (key reads): 1
+  round_robin unchanged: True
+[C explicit test stub, active key]
+  outcome: route provider=StubProvider
+  acquire_key calls: 1
+  provider SELECTs: 2
+  key_pool SELECTs (key reads): 1
+  round_robin unchanged: False
