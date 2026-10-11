@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from ragos.core.errors import NotFoundError
+from ragos.core.errors import NotFoundError, PermissionDeniedError
 from ragos.storage.models.app import ModelProfile, TenantModelBinding
 from sqlmodel import Session
 
@@ -10,10 +10,8 @@ from sqlmodel import Session
 class ProfileResolver:
     """Resolves model profiles for a tenant + use_case.
 
-    Resolution chain:
-        1. Explicit profile_override (if provided)
-        2. Tenant binding (tenant_model_binding row)
-        3. Raises NotFoundError if no profile can be resolved
+    A tenant's use_case binding authorizes the primary profile. An explicit
+    override may only name that same profile; it cannot grant model access.
 
     Once the primary profile is found, fallback profiles are walked
     via ``fallback_profile_id`` links.
@@ -30,9 +28,6 @@ class ProfileResolver:
         profile_override: UUID | None = None,
     ) -> ModelProfile:
         """Return the primary model profile for *use_case*."""
-        if profile_override is not None:
-            return self._get_profile(profile_override)
-
         # Look up tenant binding first.
         from sqlmodel import select as sql_select
 
@@ -43,7 +38,15 @@ class ProfileResolver:
         )
         binding = self.session.exec(stmt).first()
         if binding is not None:
-            return self._get_profile(binding.profile_id)
+            if profile_override is not None and profile_override != binding.profile_id:
+                # Reject before fetching the requested profile or resolving secrets.
+                raise PermissionDeniedError("Model profile override is not authorized")
+            profile = self._get_profile(binding.profile_id)
+            if profile.tenant_id != tenant_id:
+                raise PermissionDeniedError("Model profile owner is not authorized")
+            if profile.use_case != use_case:
+                raise PermissionDeniedError("Model profile use_case is not authorized")
+            return profile
 
         raise NotFoundError(
             "No model profile resolved for use_case",

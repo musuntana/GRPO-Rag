@@ -3,9 +3,10 @@
 Every LLM call the pipeline makes — grading, generation, rewriting, HyDE,
 decomposition, refinement — goes through :class:`~ragos.model_gateway.router.ModelRouter`.
 There is deliberately no path from a retrieval feature to a provider client:
-entitlement checks, budget pre-authorization, key rotation, and cost attribution
-all live behind the gateway, and a bypass is a request that spends money nobody
-metered (guardrail 9).
+entitlement checks belong behind the gateway. Budget pre-authorization, secret
+resolution and cost attribution are required before real provider activation;
+they are not yet implemented. Unconnected providers are refused, rather than
+claiming that a gateway call alone proves those controls (guardrail 9).
 
 The router's ``chat`` is synchronous, so each adapter runs it on a worker
 thread. Blocking the event loop here would stall every concurrent request on the
@@ -17,7 +18,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Protocol
 
-from ragos.core.errors import ProviderError
+from ragos.core.errors import ProviderError, ValidationError
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.types import ScoredChunk
 
@@ -82,6 +83,12 @@ class GatewayGenerator:
         system_prompt: str | None = None,
         max_evidence_chars: int = 12000,
     ) -> None:
+        if (
+            isinstance(max_evidence_chars, bool)
+            or not isinstance(max_evidence_chars, int)
+            or max_evidence_chars < 1
+        ):
+            raise ValidationError("Evidence character budget must be a positive integer")
         self.router = router
         self.use_case = use_case
         self.system_prompt = system_prompt or GENERATION_SYSTEM_PROMPT
@@ -93,6 +100,9 @@ class GatewayGenerator:
         evidence: list[ScoredChunk],
         tenant_ctx: TenantContext,
     ) -> str:
+        if sum(len(chunk.text) for chunk in evidence) > self.max_evidence_chars:
+            # Dropping or truncating passages here would change delivered citation identity.
+            raise ValidationError("Selected evidence exceeds the generation character budget")
         messages = build_generation_messages(
             question, evidence, system_prompt=self.system_prompt
         )

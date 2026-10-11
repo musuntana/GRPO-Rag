@@ -219,3 +219,32 @@ root串行补S0启动readiness：storage/db.py release revision检查、API及wo
 提交前复核：最新 C6 manifest 的 20 个源码摘要匹配，当前 119 个源码文件与验收安装环境一致；相关 Ruff 与源码/文档 diff 检查通过；原始验收日志保留工具输出的尾随空格，不改写为格式化文本。既有证据记录 775 项全量测试、21 项实际存储集成通过，本次没有将记录复核说成重新执行测试。README 和 roadmap 已同步最新阶段，旧失败记录仍保留。
 
 下一阶段使用 [S1 推进指令](next-step-instructions.md)。先确认真实 provider、可固定的 embedding 身份/维度、秘密别名、调用预算和授权文档；契约冻结后按独立文件所有权并行开发 backend/eval/frontend。真实模型条件缺失时先完成不依赖调用的工作，不使用 hash/stub 伪造 S1 验收，也不擅自公开部署或付费训练。
+
+## S1 接续：模型授权边界（2026-10-10）
+
+现场基线main/f0914adf7d97；工作树只有docs/opencode-s1-task.md未跟踪，保留原内容。原派工PID241700已不存在、临时日志不存在，且授权修复未落盘；不能将“已派发”视为完成。本次接续S1，不重写S0、不调用未知收费模型。
+
+冻结领域：ModelProfile是平台模型配置；TenantModelBinding是可信tenant+use_case使用授权；override仅选择同一绑定，不能扩大范围。ProfileResolver先查询绑定再取得profile，拒绝必须早于key/provider副作用。停用profile仍拒绝。缺资源/用途不返回其他租户profile身份。现有fallback遍历本轮不自动启用；router未实现retry不能宣称已实现。数据流ctx→binding→profile→key→provider，失败在授权边界终止，不改持久状态。
+
+| ID | owner | 精确写入范围 | 依赖 / 验收 / 前端 / 观测与回滚 |
+|---|---|---|---|
+| S1-01A | gateway_author | packages/model-gateway/src/ragos/model_gateway/profiles.py、router.py；tests/test_model_gateway.py、新tests/test_model_profile_authorization.py | 以上冻结合同；mock副作用负例+标准安装；无页面变化；tenant/use_case/error，禁止秘密日志；代码回退不得重新开放override绕过 |
+| S1-01R | root | docs/project-progress.md、集成证据及独立审查 | 实现交接后统一安装验收；不覆盖OpenCode原任务记录 |
+
+真实provider、固定模型身份/维度、出站、凭据别名、预算与授权文档待用户指定；已经提出最小资源问题。缺这些条件继续本地授权修复与契约核验，不启用stub/hash假装真实RAG。S1尚未退出；frontend/eval/ingest依赖共享模型与DTO冻结，不同时复制新契约。
+
+S1-01B串行冻结（root唯一owner）：key_pool.py、新tests/test_provider_capability.py、retrieval/gateway.py仅真实能力说明。build_provider不再将任意provider类型转Stub；默认拒绝，Stub只能server显式allow_test_stub=True且provider_type=stub，并忽略lease密钥/地址。未知/真实provider未接通时抛现有ProviderError，不将数据库api_key_encrypted解释为明文。无模型调用或迁移，不改变key选择测试；后续真实adapter需秘密别名与权威预算先验收。修复与01A文件无重叠。
+
+### S1-01A/B 当前集成结果（2026-10-10）
+
+用户决定先Qwen、稳定后考虑OpenAI；选择本地服务，但后续确认地址/模型/文档条件“暂无”。本轮不安装大模型、不开收费调用、不读取密钥。已查官方Model Studio embedding/rerank说明供后续分用途接线；本地协议/具体模型仍未冻结，不将托管服务端点套给本地服务。
+
+已修改并接通当前调用方：binding先授权override，同tenant+use_case的绑定模型才可选择；profile自身owner/use_case也必须匹配。默认provider factory拒绝未接通类型；测试stub必须server显式允许且类型为stub，不接收保存密钥或外部URL。生成max_evidence_chars落实为输入证据总字符上限，超限在dispatch前拒绝，不截断/重排引用；这不是token/费用预算，也不覆盖问题和系统prompt。
+
+标准frozen/noneditable新安装产物下最终 **120项选定回归通过**（gateway/profile/provider/字符预算/API routes/dense/profile），相关Ruff/diff通过；初始11项baseline通过。mock仓储/provider与真实测试Stub构造，未使用实库或真实Qwen；完整测试仅收集，非全量执行。证据在validation/s1-model-authorization-2026-10-10/。旧S0 775实库全量属于已提交基线，未拿来声称S1当前全量通过。
+
+独立审查者gateway_review发现stub构造缺参和bound profile owner未核对，两者已修复并增加实际构造/错配binding负例；最终回归通过。gateway_author只负责01A，root集成01B及审查修复，所有权串行移交。当前ModelProfile实际非nullable tenant-scoped，拒绝owner缺失/错配，不发明全局模型绕过。
+
+尚未实现：权威预算账本/预授权结算、secret alias resolver、gateway短事务线程内session、真实固定embedding身份/批维数校验、出站/期限/取消，以及Qwen adapter。真实调用前必须冻结并验证这些合同；公开ResolvedRoute/provider接口仍待同批迁移，不能认为gateway入口本身已提供成本/秘密控制。尚无真实上传/问答/引用Web、黄金文档baseline。本轮S1未退出。
+
+观测：授权错误在key/provider前终止，记录trusted tenant/use_case/error，不输出凭据/他租户profile；未接通模型明确ProviderError，证据字符预算ValidationError。回滚不改任何持久数据，但不可恢复override越权或任意provider→stub假成功。真实Qwen最小阻断条件：可连接地址、分用途固定模型/embedding维度、受控认证别名/调用预算、授权文档与gold；确认前继续预算/秘密/事务合同实现，无需公开部署。无commit/push、训练或服务部署；原OpenCode任务文件保留。

@@ -31,8 +31,9 @@ class KeyPoolManager:
     keys are eventually disabled.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, allow_test_stub: bool = False) -> None:
         self.session = session
+        self._allow_test_stub = allow_test_stub
         self._key_repo = PlatformRepository(session=session, model_type=KeyPool)
         self._provider_repo = PlatformRepository(session=session, model_type=ProviderModel)
         self._round_robin: dict[UUID, int] = {}
@@ -108,11 +109,12 @@ class KeyPoolManager:
         return list(self.session.exec(stmt).all())
 
     def build_provider(self, lease: KeyLease) -> BaseProvider:
-        """Construct a provider instance from a key lease.
-
-        In phase 1 all providers resolve to StubProvider. In phase 2,
-        dispatches on ``lease.provider_type`` to openai / anthropic.
-        """
+        """Refuse unconnected capabilities; a stub is explicit test data only."""
+        if not self._allow_test_stub or lease.provider_type != "stub":
+            raise ProviderError(
+                "Model provider unavailable: real adapter and controls not connected"
+            )
         from ragos.model_gateway.providers.stub import StubProvider
 
-        return StubProvider(**lease.provider_kwargs)
+        # Stub execution must never receive a stored encrypted key or network URL.
+        return StubProvider(api_key="test-only-placeholder")

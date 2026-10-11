@@ -20,8 +20,8 @@ class ModelRouter:
 
         tenant_binding → profile → provider → key → provider instance
 
-    On provider failure, the router attempts the next key in the pool,
-    then falls back to the next profile in the fallback chain.
+    Authorization precedes key acquisition and provider construction. Calls
+    use a single resolved route; retries and fallback traversal are not applied.
     """
 
     def __init__(self, session: Session) -> None:

@@ -1060,6 +1060,15 @@ At runtime, support overrides in this order:
 
 Persist the exact resolved model configuration for every run.
 
+Tenant access always starts from the trusted tenant and use-case binding. A
+request override cannot grant access to a different platform model profile;
+the current implementation accepts only the profile already bound to that
+tenant and use case. Reject unauthorized overrides before acquiring a key or
+constructing a provider. The override ordering above is a target policy within
+authorized resources, not permission to bypass bindings. Provider fallback
+and retry are not currently connected; they require separate frozen budget
+and capability contracts before activation.
+
 ## 13. Observability and Evaluation
 
 Do not reduce observability to logs only.

@@ -1,0 +1,22 @@
+{
+  "stage": "S1 incomplete",
+  "head": "f0914adf7d97dc0271f80ba3e1db79dccdd44f99",
+  "tests": "120 selected passed",
+  "scope": "installed noneditable package; mock storage/provider and actual test stub; no actual Qwen or PostgreSQL",
+  "source_sha256": {
+    "packages/model-gateway/src/ragos/model_gateway/profiles.py": "db464dd3466e0a6c712409e7198732505abc7db67892fe97d220e36fc0721c1a",
+    "packages/model-gateway/src/ragos/model_gateway/router.py": "fefa4d1a3228036524e2d35926f7b9536fb72fad23c3c2308fb713357561c69a",
+    "packages/model-gateway/src/ragos/model_gateway/key_pool.py": "451e043bb577ddd8a9c5d20befd4a758f2d9a649e79fa5c077e048235615b13d",
+    "packages/retrieval/src/ragos/retrieval/gateway.py": "7b1cd325ad70c03640756029264537835d13a4a154dc533fb484a4c4c4acd12c",
+    "tests/test_model_profile_authorization.py": "4c469b5c41a8a8650c74f8af8267bb6a411230d475983844e9688cec0c26d961",
+    "tests/test_provider_capability.py": "698d5cfdedf45d1783ca35a43248de2cfdb718ac39695ff7e5592bc4f1061933",
+    "tests/test_gateway_evidence_budget.py": "e76f49c7569a7035cefb5ed2235d028582a72b6081c13f893f9966b5c5ca1111"
+  },
+  "provider_decision": "Qwen first, local service; endpoint/models/documents unavailable",
+  "not_verified": [
+    "full current suite",
+    "real Qwen calls",
+    "production secrets/budget",
+    "browser journey"
+  ]
+}
