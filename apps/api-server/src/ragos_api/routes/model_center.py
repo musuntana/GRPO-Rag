@@ -10,6 +10,7 @@ from ragos.storage.repositories.model_gateway import (
     KeyPoolRepository,
     PlatformModelProfileRepository,
     ProviderRepository,
+    reject_raw_credential_intake,
 )
 
 from ragos_api.dependencies import DBSession
@@ -126,20 +127,23 @@ def list_key_pools(
     return {"items": [serialize_key(k) for k in keys]}
 
 
-@router.post("/providers/{provider_id}/key-pools", status_code=201)
+@router.post(
+    "/providers/{provider_id}/key-pools",
+    status_code=422,
+    responses={
+        422: {
+            "description": (
+                "Secret intake unavailable: raw API keys are not accepted or stored. "
+                "Request validation failures also return 422."
+            ),
+        },
+    },
+)
 def create_key_pool(
     provider_id: UUID,
     payload: CreateKeyPoolRequest,
-    session: DBSession,
 ) -> dict[str, Any]:
-    with session.begin():
-        key = KeyPoolRepository(session).create(
-            provider_id=provider_id,
-            label=payload.label,
-            api_key=payload.api_key,
-            weight=payload.weight,
-        )
-    return serialize_key(key)
+    reject_raw_credential_intake()
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from typing import NoReturn
 from uuid import UUID
 
-from ragos.core.errors import ConflictError
+from ragos.core.errors import ConflictError, ValidationError
 from ragos.core.tenant import TenantContext
 from ragos.storage.models.app import (
     KeyPool,
@@ -48,6 +49,19 @@ class ProviderRepository(PlatformRepository[Provider]):
 # ---------------------------------------------------------------------------
 
 
+SECRET_INTAKE_UNAVAILABLE_MESSAGE = (
+    "API key intake is unavailable: no trusted secret channel is configured, "
+    "raw credentials are not stored"
+)
+
+
+def reject_raw_credential_intake() -> NoReturn:
+    raise ValidationError(
+        SECRET_INTAKE_UNAVAILABLE_MESSAGE,
+        reason="secret_intake_unavailable",
+    )
+
+
 class KeyPoolRepository(PlatformRepository[KeyPool]):
     def __init__(self, session: Session) -> None:
         super().__init__(session=session, model_type=KeyPool)
@@ -57,17 +71,8 @@ class KeyPoolRepository(PlatformRepository[KeyPool]):
         return list(self.session.exec(stmt).all())
 
     def create(self, *, provider_id: UUID, label: str, api_key: str,
-               weight: int = 1) -> KeyPool:
-        key = KeyPool(
-            provider_id=provider_id,
-            label=label,
-            api_key_encrypted=api_key,
-            weight=weight,
-        )
-        self.session.add(key)
-        self.session.flush()
-        self.session.refresh(key)
-        return key
+               weight: int = 1) -> NoReturn:
+        reject_raw_credential_intake()
 
 
 # ---------------------------------------------------------------------------

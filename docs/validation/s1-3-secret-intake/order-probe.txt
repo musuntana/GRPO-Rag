@@ -1,0 +1,3 @@
+unauth+malformed: 401 {"error":{"code":"AUTHENTICATION_REQUIRED","message":"Authentication required","details":{}}}
+unauth+valid: 401 {"error":{"code":"AUTHENTICATION_REQUIRED","message":"Authentication required","details":{}}}
+session calls: []

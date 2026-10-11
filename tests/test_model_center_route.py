@@ -74,11 +74,6 @@ class _FakeKeyPoolRepo:
         return [KeyPool(id=uuid4(), provider_id=provider_id, label="k1",
                         api_key_encrypted="sk-xxx", weight=1)]
 
-    def create(self, *, provider_id: UUID, label: str, api_key: str,
-               weight: int = 1) -> KeyPool:
-        return KeyPool(id=uuid4(), provider_id=provider_id, label=label,
-                       api_key_encrypted=api_key, weight=weight)
-
 
 class _FakeProfileRepo:
     def __init__(self, session: Any) -> None:
@@ -174,15 +169,16 @@ def test_list_key_pools(client: TestClient) -> None:
     assert "items" in resp.json()
 
 
-def test_create_key_pool(client: TestClient) -> None:
+def test_create_key_pool_rejects_raw_credential_intake(client: TestClient) -> None:
     pid = str(uuid4())
     resp = client.post(
         f"/platform/model-center/providers/{pid}/key-pools",
         headers=_headers(["platform_admin"]),
         json={"label": "primary", "api_key": "sk-test", "weight": 2},
     )
-    assert resp.status_code == 201
-    assert resp.json()["label"] == "primary"
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert "sk-test" not in resp.text
 
 
 # -- Profiles --

@@ -1,0 +1,110 @@
+....................F..F...F.F..FF.FFF.FF.........                       [100%]
+=================================== FAILURES ===================================
+____________ test_dict_body_dynamic_key_is_never_returned_as_field _____________
+tests/test_secret_intake.py:406: in test_dict_body_dynamic_key_is_never_returned_as_field
+    assert resp.json()["error"]["details"]["errors"] == [
+E   AssertionError: assert [{'code': 'IN...tSentinel9x'}] == [{'code': 'IN...eld': 'body'}]
+E     
+E     At index 0 diff: {'field': 'body.S13AlnumSecretSentinel9x', 'code': 'INVALID_TYPE'} != {'field': 'body', 'code': 'INVALID_TYPE'}
+E     Use -v to get more diff
+_ test_raised_validation_error_fields_are_allowlisted[('body', 'S13AlnumSecretSentinel9x')-'body'] _
+tests/test_secret_intake.py:485: in test_raised_validation_error_fields_are_allowlisted
+    assert body["error"]["details"]["errors"] == [
+E   AssertionError: assert [{'code': 'IN...tSentinel9x'}] == [{'code': 'IN...eld': 'body'}]
+E     
+E     At index 0 diff: {'field': 'body.S13AlnumSecretSentinel9x', 'code': 'INVALID_TYPE'} != {'field': 'body', 'code': 'INVALID_TYPE'}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/probe/1/model "HTTP/1.1 422 Unprocessable Entity"
+_ test_raised_validation_error_fields_are_allowlisted[('body', 'undeclared_extra')-'body'] _
+tests/test_secret_intake.py:485: in test_raised_validation_error_fields_are_allowlisted
+    assert body["error"]["details"]["errors"] == [
+E   AssertionError: assert [{'code': 'IN...lared_extra'}] == [{'code': 'IN...eld': 'body'}]
+E     
+E     At index 0 diff: {'field': 'body.undeclared_extra', 'code': 'INVALID_TYPE'} != {'field': 'body', 'code': 'INVALID_TYPE'}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/probe/1/model "HTTP/1.1 422 Unprocessable Entity"
+_ test_raised_validation_error_fields_are_allowlisted[('query', 'S13AlnumSecretSentinel9x')-'query'] _
+tests/test_secret_intake.py:485: in test_raised_validation_error_fields_are_allowlisted
+    assert body["error"]["details"]["errors"] == [
+E   AssertionError: assert [{'code': 'IN...tSentinel9x'}] == [{'code': 'IN...ld': 'query'}]
+E     
+E     At index 0 diff: {'field': 'query.S13AlnumSecretSentinel9x', 'code': 'INVALID_TYPE'} != {'field': 'query', 'code': 'INVALID_TYPE'}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/probe/1/model "HTTP/1.1 422 Unprocessable Entity"
+_ test_raised_validation_error_fields_are_allowlisted[('header', 'S13AlnumSecretSentinel9x')-'header'] _
+tests/test_secret_intake.py:485: in test_raised_validation_error_fields_are_allowlisted
+    assert body["error"]["details"]["errors"] == [
+E   AssertionError: assert [{'code': 'IN...tSentinel9x'}] == [{'code': 'IN...d': 'header'}]
+E     
+E     At index 0 diff: {'field': 'header.S13AlnumSecretSentinel9x', 'code': 'INVALID_TYPE'} != {'field': 'header', 'code': 'INVALID_TYPE'}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/probe/1/model "HTTP/1.1 422 Unprocessable Entity"
+_ test_raised_validation_error_fields_are_allowlisted[('cookie', 'label')-'cookie'] _
+tests/test_secret_intake.py:485: in test_raised_validation_error_fields_are_allowlisted
+    assert body["error"]["details"]["errors"] == [
+E   AssertionError: assert [{'code': 'IN...ookie.label'}] == [{'code': 'IN...d': 'cookie'}]
+E     
+E     At index 0 diff: {'field': 'cookie.label', 'code': 'INVALID_TYPE'} != {'field': 'cookie', 'code': 'INVALID_TYPE'}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/probe/1/model "HTTP/1.1 422 Unprocessable Entity"
+_ test_raised_validation_error_fields_are_allowlisted[('weird_source', 'label')-'request'] _
+tests/test_secret_intake.py:485: in test_raised_validation_error_fields_are_allowlisted
+    assert body["error"]["details"]["errors"] == [
+E   AssertionError: assert [{'code': 'IN...quest.label'}] == [{'code': 'IN...': 'request'}]
+E     
+E     At index 0 diff: {'field': 'request.label', 'code': 'INVALID_TYPE'} != {'field': 'request', 'code': 'INVALID_TYPE'}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/probe/1/model "HTTP/1.1 422 Unprocessable Entity"
+_ test_raised_validation_error_fields_are_allowlisted[(['unhashable', 'S13AlnumSecretSentinel9x'], 'label')-'request'] _
+tests/test_secret_intake.py:482: in test_raised_validation_error_fields_are_allowlisted
+    assert resp.status_code == 422
+E   assert 500 == 422
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+------------------------------ Captured log call -------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/probe/1/model "HTTP/1.1 500 Internal Server Error"
+_ test_raised_validation_error_fields_are_allowlisted[({'key': 'S13AlnumSecretSentinel9x'},)-'request'] _
+tests/test_secret_intake.py:482: in test_raised_validation_error_fields_are_allowlisted
+    assert resp.status_code == 422
+E   assert 500 == 422
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+------------------------------ Captured log call -------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/probe/1/model "HTTP/1.1 500 Internal Server Error"
+_ test_raised_validation_error_serialization_has_no_value_for_mixed_locations __
+tests/test_secret_intake.py:506: in test_raised_validation_error_serialization_has_no_value_for_mixed_locations
+    assert resp.json()["error"]["details"]["errors"] == [
+E   AssertionError: assert [{'code': 'RE...tSentinel9x'}] == [{'code': 'RE...ld': 'query'}]
+E     
+E     At index 1 diff: {'field': 'body.S13AlnumSecretSentinel9x', 'code': 'TOO_LONG'} != {'field': 'body', 'code': 'TOO_LONG'}
+E     Use -v to get more diff
+___________ test_create_key_pool_openapi_does_not_advertise_success ____________
+tests/test_secret_intake.py:522: in test_create_key_pool_openapi_does_not_advertise_success
+    assert "201" not in responses
+E   AssertionError: assert '201' not in {'201': {'content': {'application/json': {'schema': {'additionalProperties': True, 'title': 'Response Create Key Pool ...plication/json': {'schema': {'$ref': '#/components/schemas/HTTPValidationError'}}}, 'description': 'Validation Error'}}
+=========================== short test summary info ============================
+FAILED tests/test_secret_intake.py::test_dict_body_dynamic_key_is_never_returned_as_field
+FAILED tests/test_secret_intake.py::test_raised_validation_error_fields_are_allowlisted[('body', 'S13AlnumSecretSentinel9x')-'body']
+FAILED tests/test_secret_intake.py::test_raised_validation_error_fields_are_allowlisted[('body', 'undeclared_extra')-'body']
+FAILED tests/test_secret_intake.py::test_raised_validation_error_fields_are_allowlisted[('query', 'S13AlnumSecretSentinel9x')-'query']
+FAILED tests/test_secret_intake.py::test_raised_validation_error_fields_are_allowlisted[('header', 'S13AlnumSecretSentinel9x')-'header']
+FAILED tests/test_secret_intake.py::test_raised_validation_error_fields_are_allowlisted[('cookie', 'label')-'cookie']
+FAILED tests/test_secret_intake.py::test_raised_validation_error_fields_are_allowlisted[('weird_source', 'label')-'request']
+FAILED tests/test_secret_intake.py::test_raised_validation_error_fields_are_allowlisted[(['unhashable', 'S13AlnumSecretSentinel9x'], 'label')-'request']
+FAILED tests/test_secret_intake.py::test_raised_validation_error_fields_are_allowlisted[({'key': 'S13AlnumSecretSentinel9x'},)-'request']
+FAILED tests/test_secret_intake.py::test_raised_validation_error_serialization_has_no_value_for_mixed_locations
+FAILED tests/test_secret_intake.py::test_create_key_pool_openapi_does_not_advertise_success
+11 failed, 39 passed in 1.97s
+exit=1

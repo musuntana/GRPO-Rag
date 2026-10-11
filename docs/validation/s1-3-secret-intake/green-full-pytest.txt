@@ -1,0 +1,36 @@
+........................................................................ [  8%]
+........................................................................ [ 17%]
+........................................................................ [ 25%]
+............sssssssssss................................................. [ 34%]
+........................................................................ [ 43%]
+........................................................................ [ 51%]
+........................................................................ [ 60%]
+........................................................................ [ 69%]
+........................................................................ [ 77%]
+................................................ssssssssss.............. [ 86%]
+........................................................................ [ 95%]
+........................................                                 [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_index_integration.py:53: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_index_integration.py:101: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_index_integration.py:139: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_index_integration.py:164: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_index_integration.py:185: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_index_integration.py:211: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_index_integration.py:249: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_index_integration.py:309: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_index_integration.py:348: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_index_integration.py:389: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_index_integration.py:418: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_storage_integration.py:314: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_storage_integration.py:377: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_storage_integration.py:408: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_storage_integration.py:438: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_storage_integration.py:459: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_storage_integration.py:483: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_storage_integration.py:530: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_storage_integration.py:577: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_storage_integration.py:682: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+SKIPPED [1] tests/test_storage_integration.py:697: RAGOS_TEST_PG_DSN must explicitly identify a disposable local PostgreSQL DB
+811 passed, 21 skipped in 9.53s
+exit=0
