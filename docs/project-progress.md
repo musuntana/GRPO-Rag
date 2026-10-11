@@ -257,7 +257,7 @@ S1-01B串行冻结（root唯一owner）：key_pool.py、新tests/test_provider_c
 - 4 个本地提交（相对 base `f0914adf7d97dc0271f80ba3e1db79dccdd44f99`）已按序冻结：A `841f9765477e26608d2670243d6f7f077e82588e`（feat(s1) 模型 profile 授权边界 + 显式 stub 门 + 证据字符预算）、B `200eb817da236dcb68c88f17e014d54c466037b9`（feat(s1.1) provider 准入）、C `cef5e7a7c8adb5bddbcebe89e8e2f8615513d930`（feat(s1.3) 拒绝明文凭据摄入）、D `e244035d1164ddccb0b8e7562258c5e5484332e2`（docs: archive immutable S1 RC evidence）。
 - 本地 `main` 已真实 fast-forward 到 D：`git merge --ff-only feat/grpo-rag-platform-v1`（Updating f0914adf…→e244035d…），main 保持 D tree `0257ef93…`，相对 origin/main ahead 4；未 push、无 PR、无第二次 merge。
 - 全量测试（作者实际日志）：**832 passed, 21 skipped**；21 项 PG 集成测试因 `RAGOS_TEST_PG_DSN` 未设置而跳过，不视为通过。安装产物对账 `INSTALLED_SHA_OK=True`（170 个 .py）。
-- 独立审查：Codex 对 C 目标回归 **98 passed**，判 LOCAL PASS 并明确不得由此推断 commit/merge 授权；摘要已随 B 提交归档 [codex-review](validation/s1-3-secret-intake/codex-review.md)，同类内容含于 RC 包 `raw-evidence/bundle/{codex-review.md,codex-composition-review.json}`。
+- 独立审查：Codex 对最终 D 提交的相关回归 **98 passed**，测试通过本身不授予提交或合并权限；历史 S1.3 审查摘要由 C 提交归档 [codex-review](validation/s1-3-secret-intake/codex-review.md)，同类内容含于 RC 包 `raw-evidence/bundle/{codex-review.md,codex-composition-review.json}`。
 - 全仓 ruff 既有 **117 项错误**（116×E501 + 1×I001，均在既有 migration 0001/0004/0005），本轮 **0 新增**；目标文件 ruff 全部通过。
 - whitespace 事实：历史 C vs base 的 `git diff --check` exit 2（两份 RED 日志共 16 个尾随空白行，历史字节保留）；D vs base 与 D vs C 均 exit 0。
 - 未验证/未执行（NOT RUN）：真实 provider（Qwen/OpenAI）调用、PostgreSQL/RLS 实库、Qdrant 服务、浏览器旅程、迁移执行；**R1 仍 blocked**，未执行 S1.4/R1 或任何新实现。

@@ -38,8 +38,8 @@
       "message": "docs: archive immutable S1 RC evidence"
     },
     "e": {
-      "sha": "recorded externally in release/.../cleanup logs; no self-reference inside committed manifest",
-      "tree": "see external release/cleanup logs",
+      "sha": "fa2fd03f2f2d4a8afc2fcce14b7553b8756b16fc",
+      "tree": "b8675bcf1f620d0c974627e2702a3c7c67093ea8",
       "message": "chore: retire stale S1 handoff and record local integration",
       "type": "docs-only maintenance commit"
     }
@@ -81,16 +81,18 @@
   "independent_review": {
     "reviewer": "Codex (independent)",
     "verdict": "LOCAL PASS; no commit/merge/push/merge/S1.4/R1 authority inferred",
-    "targeted_c_regression": {
-      "passed": 98,
-      "suites": "test_secret_intake, test_model_center_route, test_provider_admission, test_model_gateway, test_model_profile_authorization, test_provider_capability, test_gateway_evidence_budget"
-    },
     "summary_paths": [
-      "docs/validation/s1-3-secret-intake/codex-review.md (committed in B)",
+      "docs/validation/s1-3-secret-intake/codex-review.md (introduced by C: cef5e7a7c8adb5bddbcebe89e8e2f8615513d930)",
       "release raw-evidence/bundle/codex-review.md (sha 216a5c40...)",
       "release raw-evidence/bundle/codex-composition-review.json (sha 42fdf4f9...)",
-      "release raw-evidence/reports/s1-3-codex-review.md (sha 560571a6...)"
-    ]
+      "release raw-evidence/reports/s1-3-codex-review.md (sha 560571a6...)",
+      "durable release independent-review/local-merge-review.json (controller-observed actual D test summary; not a raw stdout capture)"
+    ],
+    "targeted_D_regression": {
+      "passed": 98,
+      "suites": "test_secret_intake, test_model_center_route, test_provider_admission, test_model_gateway, test_model_profile_authorization, test_provider_capability, test_gateway_evidence_budget",
+      "commit": "e244035d1164ddccb0b8e7562258c5e5484332e2"
+    }
   },
   "lint": {
     "whole_repo_ruff": {
@@ -110,7 +112,7 @@
   "whitespace_diffcheck": {
     "c_vs_base_exit": 2,
     "c_vs_base_offending_lines": 16,
-    "c_vs_base_detail": "12 lines red-run.txt + 4 lines rework-red-run.txt (historical bytes preserved in RC archive)",
+    "c_vs_base_detail": "8 lines red-run.txt + 8 lines rework-red-run.txt (historical bytes preserved in RC archive)",
     "d_vs_base_exit": 0,
     "d_vs_c_exit": 0,
     "e_staged_exit": 0
@@ -118,12 +120,28 @@
   "cleanup": {
     "scope": "shared main worktree /home/avaarg/GRPO-Rag only; gitignored + untracked; no symlink follow; no install env/dependency cache/source/model/secret/other repo/branch; /tmp/opencode untouched; feature worktree untouched",
     "deleted": {
-      "build": { "files": 119, "bytes_apparent": 639115 },
-      ".pytest_cache": { "files": 5, "bytes_apparent": 77404 },
-      ".ruff_cache": { "files": 38, "bytes_apparent": 19748 },
-      "__pycache___under_apps_packages_tests_scripts": { "dirs": 22, "files": 361, "bytes_apparent": 6532052 }
+      "build": {
+        "files": 119,
+        "bytes_apparent": 639115
+      },
+      ".pytest_cache": {
+        "files": 5,
+        "bytes_apparent": 77404
+      },
+      ".ruff_cache": {
+        "files": 38,
+        "bytes_apparent": 19748
+      },
+      "__pycache___under_apps_packages_tests_scripts": {
+        "dirs": 22,
+        "files": 361,
+        "bytes_apparent": 6532052
+      }
     },
-    "totals": { "files": 523, "bytes_apparent": 7268319 },
+    "totals": {
+      "files": 523,
+      "bytes_apparent": 7268319
+    },
     "note": "apparent bytes removed; not a performance benchmark; does not guarantee immediate disk reclaim",
     "tmp_targets_authorized": {
       "status": "all 8 paths already absent at verify time, including /tmp/grpo-rag-commit-prep-current symlink",
@@ -145,7 +163,7 @@
       "external release backup /home/avaarg/.local/share/grpo-rag/releases/s1-local-20261011T161256Z/ (all contents preserved)"
     ],
     "pre_delete_checks": {
-      "active_proc_refs_to_targets": "none (cwd/exe/fd/maps scanned)",
+      "active_proc_refs_to_targets": "Execution agent reported none for cwd/exe/fd/maps. Dedicated raw pre-deletion process-scan output was not retained in the cleanup logs, so this claim was not independently reverified.",
       "git_tracked_within_targets": "none",
       "gitignored": "all targets pass git check-ignore",
       "registered_worktrees_conflict": "none"
@@ -170,5 +188,6 @@
     ],
     "external_backup": "/home/avaarg/.local/share/grpo-rag/releases/s1-local-20261011T161256Z/ including approval/D.patch sha256 0639d51445c620f653f5b502604a6c0f0158a5b721e15310a23e9ddde6b3f7be, commit-validation/, local-merge/, independent-review/, cleanup/ (preserved, not deleted)"
   },
-  "post_commit_verification_logs": "external release/.../cleanup/ logs record E SHA and post-E checks (source/test/schema/lock blobs and modes identical to D; frozen release dir tree unchanged; new doc links resolve; staged whitespace 0; feature clean; main remains D clean with only ignored caches removed)"
+  "post_commit_verification_logs": "external release/.../cleanup/ logs record E SHA and post-E checks (source/test/schema/lock blobs and modes identical to D; frozen release dir tree unchanged; new doc links resolve; staged whitespace 0; feature clean; main remains D clean with only ignored caches removed)",
+  "corrected_utc": "2026-10-11T23:46:39.836004+00:00"
 }
