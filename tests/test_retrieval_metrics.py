@@ -131,6 +131,53 @@ def test_hit_at_k_is_undefined_without_an_answer_bearing_page() -> None:
     assert hit_at_k(_retrieved(("doc-1", 1)), _gold(("doc-1", 1)), 6) == 0.0
 
 
+# -- page-anchored evidence identity ---------------------------------------
+
+
+def test_wrong_page_from_same_document_is_not_a_hit() -> None:
+    """A non-answer page from the right PDF must never count as the answer."""
+    gold = [GoldEvidence(doc_id="contract", page_no=7, grade=3)]
+    wrong = [Grade(doc_id="contract", page_no=8, grade=3)]
+
+    assert hit_at_k(wrong, gold, 6) == 0.0
+    assert recall_at_k(wrong, gold, 50) == 0.0
+    assert precision_at_k(wrong, gold, 1) == 0.0
+    assert reciprocal_rank(wrong, gold) == 0.0
+    assert ndcg_at_k(wrong, gold, 10) == 0.0
+
+
+def test_correct_page_after_wrong_page_has_lower_rank() -> None:
+    gold = [GoldEvidence(doc_id="contract", page_no=7, grade=3)]
+    ranked = [
+        Grade(doc_id="contract", page_no=8, grade=3),
+        Grade(doc_id="contract", page_no=7, grade=0),
+    ]
+
+    assert hit_at_k(ranked, gold, 1) == 0.0
+    assert hit_at_k(ranked, gold, 2) == 1.0
+    assert reciprocal_rank(ranked, gold) == 0.5
+    assert ndcg_at_k(ranked, gold, 2) < 1.0
+
+
+def test_two_pages_in_one_document_are_two_recall_targets() -> None:
+    gold = [
+        GoldEvidence(doc_id="contract", page_no=7, grade=3),
+        GoldEvidence(doc_id="contract", page_no=8, grade=1),
+    ]
+    retrieved = [Grade(doc_id="contract", page_no=8, grade=1)]
+
+    assert recall_at_k(retrieved, gold, 50) == 0.5
+    assert hit_at_k(retrieved, gold, 6) == 0.0
+
+
+def test_unpaged_candidate_cannot_claim_page_anchored_gold() -> None:
+    gold = [GoldEvidence(doc_id="contract", page_no=7, grade=3)]
+    candidate = [Grade(doc_id="contract", page_no=None, grade=3)]
+
+    assert hit_at_k(candidate, gold, 6) == 0.0
+    assert recall_at_k(candidate, gold, 50) == 0.0
+
+
 # -- attribution metrics ----------------------------------------------------
 
 

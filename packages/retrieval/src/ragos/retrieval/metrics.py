@@ -17,7 +17,7 @@ from ragos.retrieval.types import EvalCase, GoldEvidence
 
 @dataclass(slots=True)
 class Grade:
-    """A graded relevance judgment for one candidate, per document.
+    """A graded relevance judgment for one retrieved document/page.
 
     Graded rather than binary because grade 1 — relevant to the topic but not
     containing the answer — is what distinguishes a useful hard negative from a
@@ -30,13 +30,13 @@ class Grade:
     page_no: int | None = None
 
 
-def _key(grade: Grade) -> str:
-    """Grades are keyed per document, not per chunk.
+def _key(grade: Grade | GoldEvidence) -> tuple[str, int | None]:
+    """Match evidence by document and page; never infer page from doc ID.
 
-    A page-anchored index returns several children per document, and a
-    chunk-level key would let one document satisfy the ranking several times.
+    An unpaged candidate cannot claim a page-anchored gold label. Unpaged
+    token-window and legacy cases continue to match with page_no=None.
     """
-    return grade.doc_id
+    return str(grade.doc_id), grade.page_no
 
 
 def precision_at_k(
@@ -47,7 +47,7 @@ def precision_at_k(
     top = list(retrieved)[:k]
     if not top:
         return 0.0
-    gold_grades = {_key(Grade(doc_id=str(g.doc_id), grade=g.grade)): g.grade for g in gold}
+    gold_grades = {_key(g): g.grade for g in gold}
     relevant = sum(1 for c in top if gold_grades.get(_key(c), 0) > 0)
     return relevant / len(top)
 
@@ -59,22 +59,22 @@ def recall_at_k(
 ) -> float:
     """Did retrieval surface the gold pages at all.
 
-    ``|gold ∩ retrieved@k| / |gold|`` over documents with grade > 0. This is
+    ``|gold ∩ retrieved@k| / |gold|`` over evidence units with grade > 0. This is
     the retriever's own objective (recall); without it a recall failure and a
     ranking failure are indistinguishable.
     """
-    gold_positive = {str(g.doc_id) for g in gold if g.grade > 0}
+    gold_positive = {_key(g) for g in gold if g.grade > 0}
     if not gold_positive:
         return 0.0
-    top_docs = {_key(c) for c in list(retrieved)[:k]}
-    return len(gold_positive & top_docs) / len(gold_positive)
+    top_evidence = {_key(c) for c in list(retrieved)[:k]}
+    return len(gold_positive & top_evidence) / len(gold_positive)
 
 
 def reciprocal_rank(
     retrieved: Sequence[Grade],
     gold: Iterable[GoldEvidence],
 ) -> float:
-    gold_positive = {str(g.doc_id) for g in gold if g.grade > 0}
+    gold_positive = {_key(g) for g in gold if g.grade > 0}
     for rank, candidate in enumerate(retrieved, start=1):
         if _key(candidate) in gold_positive:
             return 1.0 / rank
@@ -109,7 +109,7 @@ def ndcg_at_k(
     gold: Iterable[GoldEvidence],
     k: int,
 ) -> float:
-    gold_grades = {_key(Grade(doc_id=str(g.doc_id), grade=g.grade)): g.grade for g in gold}
+    gold_grades = {_key(g): g.grade for g in gold}
     actual = [gold_grades.get(_key(c), 0) for c in list(retrieved)[:k]]
     ideal = sorted(gold_grades.values(), reverse=True)[:k]
     idcg = dcg(ideal)
@@ -120,7 +120,7 @@ def ndcg_at_k(
 
 def hit_at_k(retrieved: Sequence[Grade], gold: Iterable[GoldEvidence], k: int) -> float:
     """Did an answer-bearing (grade 3) page reach the top K?"""
-    target = {str(g.doc_id) for g in gold if g.grade >= 3}
+    target = {_key(g) for g in gold if g.grade >= 3}
     if not target:
         return 0.0
     return 1.0 if any(_key(c) in target for c in list(retrieved)[:k]) else 0.0
