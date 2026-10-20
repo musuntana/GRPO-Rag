@@ -55,7 +55,7 @@ export RAGOS_PROBE_BASE_URL=http://localhost:12434/engines/v1
 export RAGOS_PROBE_CHAT_MODEL='<installed Chat model>'
 export RAGOS_PROBE_EMBED_MODEL='<installed Embedding model>'
 export RAGOS_PROBE_EMBED_REVISION='<frozen model revision or digest>'
-.venv/bin/python scripts/probe_page_rag.py
+.venv/bin/python -m ragos.retrieval.local_probe
 ```
 
 The output contains the selected page numbers, page-level hit@2, Qdrant
