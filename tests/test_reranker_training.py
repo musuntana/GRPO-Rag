@@ -142,7 +142,13 @@ def test_sft_weights_grade_one_negatives_above_grade_zero() -> None:
     mined = mine([_case()])
     examples = build_examples(
         mined.pairs,
-        {"doc-18": "Q2 table", "doc-17": "Q1 table", "doc-hr": "leave policy"},
+        {
+            ("doc-18", 18): "Q2 table",
+            ("doc-17", 17): "Q1 table",
+            ("doc-19", 19): "Q3 table",
+            ("doc-42", 42): "FY table",
+            ("doc-hr", None): "leave policy",
+        },
     )
 
     related = [e for e in examples if e.negative_grade == 1]
@@ -153,7 +159,13 @@ def test_sft_weights_grade_one_negatives_above_grade_zero() -> None:
 
 def test_sft_dataset_digest_is_stable_and_content_addressed() -> None:
     mined = mine([_case()])
-    texts = {"doc-18": "Q2", "doc-17": "Q1", "doc-19": "Q3", "doc-42": "FY", "doc-hr": "HR"}
+    texts = {
+        ("doc-18", 18): "Q2",
+        ("doc-17", 17): "Q1",
+        ("doc-19", 19): "Q3",
+        ("doc-42", 42): "FY",
+        ("doc-hr", None): "HR",
+    }
 
     first = train(mined.pairs, texts, tenant_scope_key="t::u")
     second = train(mined.pairs, texts, tenant_scope_key="t::u")
@@ -166,7 +178,13 @@ def test_sft_run_records_the_tenant_scope_key() -> None:
     mined = mine([_case()])
     run = train(
         mined.pairs,
-        {"doc-18": "a", "doc-17": "b", "doc-19": "c", "doc-42": "d", "doc-hr": "e"},
+        {
+            ("doc-18", 18): "a",
+            ("doc-17", 17): "b",
+            ("doc-19", 19): "c",
+            ("doc-42", 42): "d",
+            ("doc-hr", None): "e",
+        },
         tenant_scope_key="tenant-1::user-9",
     )
 
@@ -202,11 +220,106 @@ def test_dataset_digest_changes_when_the_pairs_change() -> None:
         negative_grade=1,
         negative_reason="adjacent_page",
     )
-    texts = {"p": "positive", "n": "neg a", "other": "neg b"}
+    texts = {
+        ("p", 1): "positive",
+        ("n", 2): "neg a",
+        ("other", 3): "neg b",
+    }
 
     assert dataset_digest(build_examples([a], texts)) != dataset_digest(
         build_examples([b], texts)
     )
+
+
+def _same_pdf_case() -> EvalCase:
+    return EvalCase(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        question="What is the warranty period?",
+        gold_evidence=[
+            GoldEvidence(doc_id="contract", page_no=7, grade=3),
+            GoldEvidence(doc_id="contract", page_no=8, grade=1),
+        ],
+    )
+
+
+def test_sft_uses_distinct_texts_for_same_pdf_pages() -> None:
+    case = _same_pdf_case()
+    pairs = mine_case(case).pairs
+    examples = build_examples(
+        pairs, {("contract", 7): "24 months", ("contract", 8): "5% deposit"}
+    )
+    assert len(examples) == 1
+    example = examples[0]
+    assert (example.positive_text, example.negative_text) == (
+        "24 months", "5% deposit"
+    )
+    assert (example.positive_page_no, example.negative_page_no) == (7, 8)
+
+
+def test_sft_fails_closed_when_only_document_wide_text_is_supplied() -> None:
+    case = _same_pdf_case()
+    pairs = mine_case(case).pairs
+    with pytest.raises(ValidationError, match="document/page"):
+        build_examples(pairs, {"contract": "whole PDF"})
+
+
+def test_sft_fails_closed_on_one_missing_page_instead_of_dropping_pair() -> None:
+    case = _same_pdf_case()
+    pairs = mine_case(case).pairs
+    with pytest.raises(ValidationError, match="document/page"):
+        build_examples(pairs, {("contract", 7): "24 months"})
+
+
+def test_sft_unpaged_legacy_lookup_remains_compatible() -> None:
+    case_id = uuid4()
+    pair = MiningPair(
+        case_id=case_id,
+        question="q",
+        positive_doc_id="a",
+        positive_page_no=None,
+        positive_grade=3,
+        negative_doc_id="b",
+        negative_page_no=None,
+        negative_grade=1,
+        negative_reason="cross_topic",
+    )
+    examples = build_examples([pair], {"a": "correct", "b": "wrong"})
+    assert len(examples) == 1
+    assert examples[0].positive_text == "correct"
+
+
+def test_sft_digest_changes_with_page_identity_even_for_identical_text() -> None:
+    case_id = uuid4()
+    def make_pair(page: int) -> MiningPair:
+        return MiningPair(
+            case_id=case_id,
+            question="q",
+            positive_doc_id="contract",
+            positive_page_no=page,
+            positive_grade=3,
+            negative_doc_id="contract",
+            negative_page_no=8,
+            negative_grade=1,
+            negative_reason="same_document",
+        )
+    texts = {
+        ("contract", 6): "same text",
+        ("contract", 7): "same text",
+        ("contract", 8): "different text",
+    }
+    first = dataset_digest(build_examples([make_pair(6)], texts))
+    second = dataset_digest(build_examples([make_pair(7)], texts))
+    assert first != second
+
+
+def test_sft_digest_changes_when_weight_changes() -> None:
+    case = _same_pdf_case()
+    pairs = mine_case(case).pairs
+    texts = {("contract", 7): "24 months", ("contract", 8): "deposit"}
+    a = dataset_digest(build_examples(pairs, texts, SFTConfig(related_weight=1.0)))
+    b = dataset_digest(build_examples(pairs, texts, SFTConfig(related_weight=2.0)))
+    assert a != b
 
 
 # -- GRPO reward ------------------------------------------------------------
@@ -417,7 +530,13 @@ def _request(**overrides) -> PromotionRequest:
     mined = mine([_case()])
     run = train(
         mined.pairs,
-        {"doc-18": "a", "doc-17": "b", "doc-19": "c", "doc-42": "d", "doc-hr": "e"},
+        {
+            ("doc-18", 18): "a",
+            ("doc-17", 17): "b",
+            ("doc-19", 19): "c",
+            ("doc-42", 42): "d",
+            ("doc-hr", None): "e",
+        },
         tenant_scope_key=SCOPE_KEY,
     )
     defaults = {

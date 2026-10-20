@@ -23,3 +23,16 @@ This is still **offline reward/data preparation**, not a genuine GRPO
 optimization loop. The page-aware SFT text resolver, actual provider,
 LoRA optimizer, train/dev/holdout, and real experimental results are
 separate unimplemented integration work.
+
+## SFT page-aware text resolution
+
+The offline SFT pair builder now requires an exact `(doc_id, page_no)` text
+lookup for all paginated evidence. A plain `doc_id` text key is accepted
+only when the mined pair has `page_no=None`. Missing or empty text raises a
+validation error instead of silently deleting training pairs.
+
+`dataset_digest` now also includes each example's document/page identity,
+case ID, actual text, negative grade and weight. This makes pre/post patch
+digest strings **intentionally incompatible**; recompute experiment metadata.
+The SFT helper still constructs metadata and pairs, not fitted weights or a
+deployable cross-encoder.
