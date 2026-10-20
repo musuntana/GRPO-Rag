@@ -77,3 +77,25 @@ the models.
 
 Rollback: revert this stacked feature branch; it has no migrations or durable
 stored data. PR #1 and #2 remain independent and must not be merged implicitly.
+
+## Page parsing and immutable index identity upgrade
+
+The new revision routes the synthetic per-page elements through
+`parse_pdf_pages` and the actual `PageChunker(parent_unit="page")` before
+calling Qdrant. The parser determines page numbers and parent-child spans;
+the probe now validates that each child is an exact substring of both
+the document-global representation and its page-local text. It no longer
+invents `page_count=9` for a three-page fixture or uses an arbitrary
+representation length of 1000.
+
+Immutable identifiers derive from the source page list digest and frozen
+parser/chunker settings. The vector index identity also includes the
+embedding revision; two different embedding revisions must not reuse a point
+or collection identity. A changed source page receives a new document
+version and distinct chunk identifiers. This is a **local projection contract**,
+not an authorized document-version record or published PostgreSQL manifest.
+
+This test still starts with *already extracted* synthetic PDF page elements.
+A real PDF byte parser and scanned-document OCR/vision, table layout recovery,
+real tenant KB ingestion, durable PG publication and authenticated source
+hydration remain separate features.

@@ -8,7 +8,7 @@ import pytest
 from qdrant_client import QdrantClient
 from ragos.core.errors import ProviderError, ValidationError
 from ragos.model_gateway.providers import ChatChunk, EmbedResult
-from ragos.retrieval.local_probe import DOC, KB, TENANT, run_probe
+from ragos.retrieval.local_probe import DOC, KB, TENANT, _chunks, run_probe
 
 
 @dataclass
@@ -52,7 +52,7 @@ def test_in_memory_qdrant_real_writer_and_citation_verifier() -> None:
     provider = SyntheticProvider()
     result = _run(provider)
     assert result.hit_at_2 == 1.0
-    assert result.retrieved_pages[0] == 7
+    assert result.retrieved_pages[0] == 1
     assert result.structural_verdicts == ("ok",)
     assert result.semantic_verification == "not_checked"
     assert len(result.readback_digest) == 64
@@ -77,8 +77,10 @@ def test_probe_uses_scoped_qdrant_filter_and_no_persistent_pg_state() -> None:
         assert {p.payload["tenant_id"] for p in records} == {str(TENANT)}
         assert {p.payload["kb_id"] for p in records} == {str(KB)}
         assert {p.payload["doc_id"] for p in records} == {str(DOC)}
-        assert {p.payload["page_no"] for p in records} == {7, 8, 9}
+        assert {p.payload["page_no"] for p in records} == {1, 2, 3}
         assert all("body" not in p.payload for p in records)
+        assert {p.payload["page_count"] for p in records} == {3}
+        assert all(p.payload["parent_chunk_id"] is not None for p in records)
     finally:
         client.close()
 
@@ -98,3 +100,53 @@ def test_query_embedding_dimension_change_fails_closed() -> None:
 
     with pytest.raises(ProviderError, match="dimension"):
         _run(DriftingProvider())
+
+
+def test_real_page_chunker_produces_exact_source_spans() -> None:
+    from ragos.retrieval.local_probe import PAGES
+
+    chunks = _chunks()
+    raw = "\n\n".join(text for _, text in PAGES)
+    assert len(chunks) == 3
+    assert [item.page_no for item in chunks] == [1, 2, 3]
+    assert all(item.parent_unit == "page" and item.page_count == 3 for item in chunks)
+    assert all(item.representation_char_count == len(raw) for item in chunks)
+    assert all(raw[item.start_char_idx:item.end_char_idx] == item.body for item in chunks)
+    assert len({item.parent_chunk_id for item in chunks}) == 3
+
+
+def test_content_change_creates_distinct_immutable_source_and_chunk_ids() -> None:
+    original = _chunks()
+    changed = _chunks(
+        page_texts=[
+            "Contract section 7: warranty lasts 12 months instead.",
+            "Contract section 8: the retained guarantee deposit is 5 percent.",
+            "Contract section 9: invoice settlement requires a signed receipt.",
+        ]
+    )
+    assert original[0].document_id == changed[0].document_id == DOC
+    assert original[0].document_version_id != changed[0].document_version_id
+    assert original[0].representation_id != changed[0].representation_id
+    assert original[0].index_id != changed[0].index_id
+    assert original[0].id != changed[0].id
+
+
+def test_embedding_revision_changes_index_not_source() -> None:
+    first = _chunks(embedding_version="qwen-embedding-v1")
+    second = _chunks(embedding_version="qwen-embedding-v2")
+    third = _chunks(embedding_version="qwen-embedding-v1")
+    assert first[0].document_version_id == second[0].document_version_id
+    assert first[0].representation_id == second[0].representation_id
+    assert first[0].index_id != second[0].index_id
+    assert [p.id for p in first] == [p.id for p in third]
+
+
+def test_empty_pdf_page_must_not_be_silently_ignored() -> None:
+    with pytest.raises(ValidationError, match="empty PDF page"):
+        _chunks(page_texts=["contract", "", "invoice"])
+
+
+def test_page_number_contiguity_comes_from_parser() -> None:
+    from ragos.retrieval.local_probe import PAGES
+
+    assert [c.page_no for c in _chunks()] == list(range(1, len(PAGES) + 1))
