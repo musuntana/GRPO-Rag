@@ -12,8 +12,14 @@ compared to new page-aware scores.
 Regression cases in `tests/test_retrieval_metrics.py`: wrong page, correct
 page after wrong page, multiple pages in one document, and missing page number.
 
-Remaining blocker: `training/grpo.py::_grades_from_order` still takes sampled
-document IDs and copies page IDs from gold. It is not a valid source of
-page-anchored GRPO rewards; change it to require explicit sampled page
-identities before running page-based RL. No real model or training run is
-claimed by this patch.
+Follow-up on the same review branch: `training/grpo.py` now accepts
+`RankedPage(document_id, page_no)` for sampled page identity and does not
+copy the page number from gold. Same-document/different-page negatives are
+mined; reward demotion explicitly compares positive/negative rank positions.
+Missing hard negatives do not earn a free demotion reward. Plain string
+identities remain for unpaged legacy training data.
+
+This is still **offline reward/data preparation**, not a genuine GRPO
+optimization loop. The page-aware SFT text resolver, actual provider,
+LoRA optimizer, train/dev/holdout, and real experimental results are
+separate unimplemented integration work.

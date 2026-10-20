@@ -14,6 +14,7 @@ from ragos.core.errors import PermissionDeniedError, ValidationError
 from ragos.retrieval.metrics import Grade
 from ragos.retrieval.training.grpo import (
     GroupBatch,
+    RankedPage,
     Ranking,
     RewardWeights,
     compute_reward,
@@ -114,6 +115,26 @@ def test_mining_rejects_negative_caps() -> None:
         mine([_case()], config=MiningConfig(max_related_per_positive=-1))
 
 
+def test_same_pdf_different_page_is_mined_as_hard_negative() -> None:
+    case = EvalCase(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        question="How long is the warranty?",
+        gold_evidence=[
+            GoldEvidence(doc_id="contract", grade=3, page_no=7),
+            GoldEvidence(doc_id="contract", grade=1, page_no=8),
+        ],
+    )
+
+    mined = mine_case(case)
+
+    assert len(mined.pairs) == 1
+    pair = mined.pairs[0]
+    assert (pair.positive_doc_id, pair.positive_page_no) == ("contract", 7)
+    assert (pair.negative_doc_id, pair.negative_page_no) == ("contract", 8)
+    assert pair.negative_reason == "same_document"
+
+
 # -- SFT baseline -----------------------------------------------------------
 
 
@@ -195,8 +216,22 @@ def test_reward_rewards_promoting_the_answer_above_related_pages() -> None:
     case = _case()
     mined = mine([case])
 
-    good = compute_reward(Ranking(str(case.id), ["doc-18", "doc-17", "doc-19"]), case, mined.pairs)
-    bad = compute_reward(Ranking(str(case.id), ["doc-17", "doc-18", "doc-19"]), case, mined.pairs)
+    good = compute_reward(
+        Ranking(
+            str(case.id),
+            [RankedPage("doc-18", 18), RankedPage("doc-17", 17), RankedPage("doc-19", 19)],
+        ),
+        case,
+        mined.pairs,
+    )
+    bad = compute_reward(
+        Ranking(
+            str(case.id),
+            [RankedPage("doc-17", 17), RankedPage("doc-18", 18), RankedPage("doc-19", 19)],
+        ),
+        case,
+        mined.pairs,
+    )
 
     assert good.total > bad.total
     assert good.hit == 1.0
@@ -242,8 +277,8 @@ def test_group_batch_exposes_rewards_and_advantages_together() -> None:
     batch = GroupBatch(
         case=case,
         rankings=[
-            Ranking(str(case.id), ["doc-18", "doc-17"]),
-            Ranking(str(case.id), ["doc-17", "doc-18"]),
+            Ranking(str(case.id), [RankedPage("doc-18", 18), RankedPage("doc-17", 17)]),
+            Ranking(str(case.id), [RankedPage("doc-17", 17), RankedPage("doc-18", 18)]),
         ],
         pairs=mined.pairs,
     )
@@ -253,6 +288,90 @@ def test_group_batch_exposes_rewards_and_advantages_together() -> None:
 
     assert len(rewards) == len(advantages) == 2
     assert advantages[0] > advantages[1]
+
+
+def test_grpo_reward_distinguishes_pages_with_the_same_document_id() -> None:
+    case = EvalCase(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        question="How long is the warranty?",
+        gold_evidence=[
+            GoldEvidence(doc_id="contract", grade=3, page_no=7),
+            GoldEvidence(doc_id="contract", grade=1, page_no=8),
+        ],
+    )
+    pairs = mine_case(case).pairs
+    correct = compute_reward(
+        Ranking(str(case.id), [RankedPage("contract", 7), RankedPage("contract", 8)]),
+        case,
+        pairs,
+    )
+    wrong = compute_reward(
+        Ranking(str(case.id), [RankedPage("contract", 8), RankedPage("contract", 7)]),
+        case,
+        pairs,
+    )
+
+    assert correct.hit == wrong.hit == 1.0
+    assert correct.ndcg > wrong.ndcg
+    assert correct.hard_negative_demotion == 1.0
+    assert wrong.hard_negative_demotion == 0.0
+    assert correct.total > wrong.total
+
+
+def test_grpo_does_not_copy_gold_page_when_sample_has_only_doc_id() -> None:
+    case = EvalCase(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        question="What is the warranty?",
+        gold_evidence=[GoldEvidence(doc_id="contract", grade=3, page_no=7)],
+    )
+    reward = compute_reward(Ranking(str(case.id), ["contract"]), case, [])
+
+    assert reward.hit == 0.0
+    assert reward.ndcg == 0.0
+
+
+def test_grpo_wrong_page_only_cannot_claim_hit() -> None:
+    case = EvalCase(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        question="What is the warranty?",
+        gold_evidence=[
+            GoldEvidence(doc_id="contract", grade=3, page_no=7),
+            GoldEvidence(doc_id="contract", grade=1, page_no=8),
+        ],
+    )
+    reward = compute_reward(
+        Ranking(str(case.id), [RankedPage("contract", 8)]), case, mine_case(case).pairs
+    )
+
+    assert reward.hit == 0.0
+    assert reward.ndcg < 1.0
+    assert reward.hard_negative_demotion == 0.0
+
+
+def test_hard_negative_reward_does_not_increase_with_unrelated_padding() -> None:
+    assert hard_negative_demotion(
+        ["neg", "pos"], ["neg"], positives=["pos"]
+    ) == hard_negative_demotion(
+        ["noise", "neg", "pos"], ["neg"], positives=["pos"]
+    ) == 0.0
+
+
+def test_missing_negative_is_not_rewarded_as_demoted() -> None:
+    assert hard_negative_demotion(["pos"], ["neg"], positives=["pos"]) == 0.0
+
+
+def test_duplicate_pages_in_sample_are_rejected() -> None:
+    with pytest.raises(ValidationError, match="duplicate evidence"):
+        Ranking("case", [RankedPage("contract", 7), RankedPage("contract", 7)])
+
+
+def test_grpo_rejects_reward_with_foreign_case_id() -> None:
+    case = _case()
+    with pytest.raises(ValidationError, match="case_id"):
+        compute_reward(Ranking("other-case", [RankedPage("doc-18", 18)]), case, [])
 
 
 # -- the gate ---------------------------------------------------------------

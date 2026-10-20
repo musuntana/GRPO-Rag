@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from ragos.core.errors import ValidationError
 from ragos.retrieval.metrics import Grade, hit_at_k, ndcg_at_k
 from ragos.retrieval.training.mine import RELATED_GRADE, MiningPair
 from ragos.retrieval.types import EvalCase, GoldEvidence
@@ -43,12 +44,45 @@ class RewardWeights:
         return RewardWeights(self.alpha / total, self.beta / total, self.gamma / total)
 
 
+@dataclass(frozen=True, slots=True)
+class RankedPage:
+    """A sampled evidence identity; page number belongs to the candidate, not gold."""
+
+    doc_id: str
+    page_no: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.doc_id or (
+            self.page_no is not None
+            and (isinstance(self.page_no, bool) or self.page_no < 1)
+        ):
+            raise ValidationError("invalid sampled document/page identity")
+
+
+def _identity(value: str | RankedPage) -> tuple[str, int | None]:
+    if isinstance(value, RankedPage):
+        return value.doc_id, value.page_no
+    if isinstance(value, str) and value:
+        # Legacy/unpaged only; NEVER infer a page number from a gold label.
+        return value, None
+    raise ValidationError("sampled evidence must have an explicit identity")
+
+
 @dataclass(slots=True)
 class Ranking:
-    """One sampled ranking for one query."""
+    """One sampled ranking. For page corpora, pass RankedPage entries.
+
+    Plain strings are retained only for legacy unpaged examples. Duplicates
+    are refused rather than letting one page occupy multiple reward slots.
+    """
 
     case_id: str
-    doc_order: list[str]
+    doc_order: list[str | RankedPage]
+
+    def __post_init__(self) -> None:
+        identities = [_identity(value) for value in self.doc_order]
+        if len(identities) != len(set(identities)):
+            raise ValidationError("sampled ranking contains duplicate evidence identities")
 
 
 @dataclass(slots=True)
@@ -67,36 +101,46 @@ class RewardBreakdown:
         }
 
 
-def _grades_from_order(order: Sequence[str], gold: Sequence[GoldEvidence]) -> list[Grade]:
-    gold_map = {str(g.doc_id): g.grade for g in gold}
-    pages = {str(g.doc_id): g.page_no for g in gold}
+def _grades_from_order(
+    order: Sequence[str | RankedPage], gold: Sequence[GoldEvidence]
+) -> list[Grade]:
+    """Use sampled page coordinates, not a page label copied from gold."""
+    gold_map = {(str(g.doc_id), g.page_no): g.grade for g in gold}
     return [
-        Grade(doc_id=doc_id, grade=gold_map.get(doc_id, 0), page_no=pages.get(doc_id))
-        for doc_id in order
+        Grade(doc_id=doc_id, grade=gold_map.get((doc_id, page_no), 0), page_no=page_no)
+        for doc_id, page_no in (_identity(item) for item in order)
     ]
 
 
 def hard_negative_demotion(
-    order: Sequence[str],
-    negatives: Sequence[str],
+    order: Sequence[str | RankedPage],
+    negatives: Sequence[str | RankedPage],
+    *,
+    positives: Sequence[str | RankedPage] | None = None,
 ) -> float:
-    """Fraction of mined negatives ranked below the top answer-bearing page.
+    """Fraction of hard negatives below the first answer-bearing page.
 
-    Grade 1 negatives are the ones this measures against. A model that promotes
-    a related-but-not-answering page above the answer has demoted the answer
-    even though a naive "is a relevant page present" check still passes.
+    Unrelated padding before a negative does not increase the score. Missing
+    negatives are not counted as successfully demoted: silently omitting them
+    from the sampled ranking must not earn reward. If no negatives were labeled,
+    the term is neutral (1.0). Explicit positives are required for real rewards;
+    the fallback preserves legacy unpaged unit-test calls.
     """
     if not negatives:
         return 1.0
-    negative_set = set(negatives)
-    first_negative: int | None = None
-    for idx, doc_id in enumerate(order):
-        if doc_id in negative_set:
-            first_negative = idx
-            break
-    if first_negative is None:
-        return 1.0
-    return first_negative / max(len(order), 1)
+    positions = {_identity(item): idx for idx, item in enumerate(order)}
+    negative_keys = set(_identity(item) for item in negatives)
+    if positives is None:
+        positive_keys = set(positions) - negative_keys
+    else:
+        positive_keys = set(_identity(item) for item in positives)
+    positive_positions = [positions[k] for k in positive_keys if k in positions]
+    if not positive_positions:
+        return 0.0
+    best_positive = min(positive_positions)
+    return sum(
+        1 for key in negative_keys if key in positions and positions[key] > best_positive
+    ) / len(negative_keys)
 
 
 def compute_reward(
@@ -108,13 +152,24 @@ def compute_reward(
     k: int = 6,
 ) -> RewardBreakdown:
     """Reward one ranking against frozen gold labels."""
+    if ranking.case_id != str(case.id):
+        raise ValidationError("ranking case_id does not match the gold evaluation case")
     weights = (weights or RewardWeights()).normalized
     grades = _grades_from_order(ranking.doc_order, case.gold_evidence)
 
     hit = hit_at_k(grades, case.gold_evidence, k)
     ndcg = ndcg_at_k(grades, case.gold_evidence, k)
-    negatives = [p.negative_doc_id for p in pairs if p.negative_grade == RELATED_GRADE]
-    demotion = hard_negative_demotion(ranking.doc_order, negatives)
+    negatives = [
+        RankedPage(p.negative_doc_id, p.negative_page_no)
+        for p in pairs
+        if p.case_id == case.id and p.negative_grade == RELATED_GRADE
+    ]
+    positives = [
+        RankedPage(str(g.doc_id), g.page_no)
+        for g in case.gold_evidence
+        if g.grade >= 3
+    ]
+    demotion = hard_negative_demotion(ranking.doc_order, negatives, positives=positives)
 
     total = weights.alpha * hit + weights.beta * ndcg + weights.gamma * demotion
     return RewardBreakdown(hit=hit, ndcg=ndcg, hard_negative_demotion=demotion, total=total)
