@@ -8,7 +8,7 @@ import pytest
 from qdrant_client import QdrantClient
 from ragos.core.errors import ProviderError, ValidationError
 from ragos.model_gateway.providers import ChatChunk, EmbedResult
-from scripts.probe_page_rag import DOC, TENANT, KB, _chunks, _context, run_probe
+from scripts.probe_page_rag import DOC, KB, TENANT, run_probe
 
 
 @dataclass
