@@ -15,7 +15,6 @@ from typing import Protocol
 from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from qdrant_client import QdrantClient
-
 from ragos.core.errors import ProviderError, ValidationError
 from ragos.core.tenant import TenantContext
 from ragos.model_gateway.providers.openai_compatible import OpenAICompatibleProvider
