@@ -76,7 +76,7 @@ def _http_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeo
             if len(body) > _MAX_RESPONSE_BYTES:
                 raise ProviderError("Model provider response too large")
             parsed = json.loads(body.decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, OSError, UnicodeError, ValueError) as exc:
+    except (HTTPError, URLError, TimeoutError, OSError, UnicodeError, ValueError):
         # Do not expose provider response bodies, credentials, internal URLs or prompts.
         raise ProviderError("Model provider request failed") from None
     if not isinstance(parsed, dict):
