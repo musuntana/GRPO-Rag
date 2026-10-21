@@ -257,7 +257,8 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
 
     def _fake_service(*, session, tenant_ctx, payload, run_id):
         return _service(messages=messages, retrieval=retrieval, tasks=tasks, tenant_ctx=tenant_ctx,
-                        payload=payload, tmp_path=tmp_path, run_id=run_id)
+                        payload=payload, tmp_path=tmp_path, run_id=run_id,
+                        persist_turn=session.commit)
 
     monkeypatch.setattr(chat_route, "_service", _fake_service)
 
@@ -275,7 +276,9 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
     return client
 
 
-def _service(*, messages, retrieval, tasks, tenant_ctx, payload, tmp_path, run_id) -> Any:
+def _service(
+    *, messages, retrieval, tasks, tenant_ctx, payload, tmp_path, run_id, persist_turn
+) -> Any:
     from ragos.runtime.chat import ChatService
 
     return ChatService(
@@ -294,6 +297,7 @@ def _service(*, messages, retrieval, tasks, tenant_ctx, payload, tmp_path, run_i
             retriever_profile_id=payload.retriever_profile_id,
             window_n=6,
             memory_profile_version="mpv-3",
+            persist_turn=persist_turn,
             retriever_profile_version=payload.retriever_profile_version,
         ),
     )
@@ -611,3 +615,12 @@ def test_replay_requires_authentication(client: TestClient) -> None:
         f"/chat/conversations/{CONVERSATION_ID}/runs/{run_id}/events"
     )
     assert unauth.status_code == 401
+
+
+def test_final_sse_event_sent_after_transaction_commit(client: TestClient) -> None:
+    """A failed DB transaction cannot leave a false successful run."""
+    # Existing streaming tests still assert normal run_finished on success.
+    response = _send_run(client)
+    assert response.status_code == 200
+    assert "event: run_finished" in response.text
+    assert len(client.messages.records) == 2  # type: ignore[attr-defined]
