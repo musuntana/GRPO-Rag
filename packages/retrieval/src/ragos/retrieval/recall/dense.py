@@ -59,6 +59,8 @@ class DenseRecall:
         source: ChunkSource,
         tier: SearchTier = SearchTier.STABLE,
         filter_builder: FilterBuilder | None = None,
+        embedding_profile: str | None = None,
+        embedding_version: str | None = None,
     ) -> None:
         from ragos.storage.vector import build_filter
 
@@ -68,6 +70,10 @@ class DenseRecall:
         self.source = source
         self.tier = tier
         self.filter_builder = filter_builder or build_filter
+        if (embedding_profile is None) != (embedding_version is None):
+            raise ValidationError("dense embedding identity must be pinned together")
+        self.embedding_profile = embedding_profile
+        self.embedding_version = embedding_version
 
     async def recall(
         self,
@@ -165,13 +171,17 @@ class DenseRecall:
         """Fill text from the search schema, preserving Qdrant's ranking."""
         if not chunks:
             return []
+        lookup = {
+            "tier": self.tier,
+            "scope_key": scope_key,
+            "chunk_ids": [c.chunk_id for c in chunks],
+        }
+        if self.embedding_profile is not None:
+            lookup["embedding_profile"] = self.embedding_profile
+            lookup["embedding_version"] = self.embedding_version
         by_id = {
             hit.chunk_id: hit
-            for hit in self.source.get_chunks_by_ids(
-                tier=self.tier,
-                scope_key=scope_key,
-                chunk_ids=[c.chunk_id for c in chunks],
-            )
+            for hit in self.source.get_chunks_by_ids(**lookup)
         }
 
         hydrated: list[ScoredChunk] = []

@@ -439,12 +439,28 @@ class SearchRepository:
         ]
 
     def get_chunks_by_ids(
-        self, *, tier: SearchTier, scope_key: str, chunk_ids: list[UUID]
+        self,
+        *,
+        tier: SearchTier,
+        scope_key: str,
+        chunk_ids: list[UUID],
+        embedding_profile: str | None = None,
+        embedding_version: str | None = None,
     ) -> list[SearchHit]:
+        """Hydrate only published chunks for the requested embedding space."""
+        if (embedding_profile is None) != (embedding_version is None):
+            raise ValidationError("embedding profile and version must be pinned together")
         model = self.model_for_tier(tier)
         statement = self._scope(model, tier=tier, scope_key=scope_key).where(
             model.id.in_(chunk_ids)
         )
+        if embedding_profile is not None:
+            if tier == SearchTier.MEMORY:
+                raise ValidationError("enterprise embedding pin cannot read private memory")
+            statement = statement.where(
+                ChunkManifest.embedding_profile == embedding_profile,
+                ChunkManifest.embedding_version == embedding_version,
+            )
         return [
             self._hit(row, representation_char_count=char_count, parent_unit=parent_unit)
             for row, char_count, parent_unit in self.session.execute(statement).all()

@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from uuid import UUID
+from urllib.parse import urlsplit
 
 from ragos.core.config import Settings, get_settings
 from ragos.core.errors import ValidationError
@@ -32,6 +33,7 @@ from ragos.core.logging import get_logger
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.gateway import (
     GatewayComplete,
+    GatewayEmbedder,
     GatewayGenerator,
     GatewayJudge,
 )
@@ -102,7 +104,50 @@ def build_recall_channels(
     client = qdrant_client
     if client is None and dense:
         client = _default_qdrant_client(cfg)
-    if dense and client is not None and router is not None:
+    local_dense = dense and cfg.local_model_enabled and cfg.app_env == "dev"
+    if local_dense:
+        # ModelRoute authorization still happens on every query; this config
+        # only freezes the physical Qdrant namespace and PG index identity.
+        from ragos.runtime.local_embedding_probe import FrozenEmbeddingSpec
+
+        if cfg.api_host not in {"localhost", "127.0.0.1", "::1"}:
+            raise ValidationError("dev dense requires a loopback-bound API")
+        qdrant_url = urlsplit(cfg.qdrant_url)
+        if cfg.qdrant_url and (
+            qdrant_url.hostname not in {"localhost", "127.0.0.1", "::1"}
+            or qdrant_url.scheme != "http"
+            or qdrant_url.username is not None
+            or qdrant_url.password is not None
+            or qdrant_url.query
+            or qdrant_url.fragment
+        ):
+            raise ValidationError("dev dense requires local Qdrant HTTP")
+        if not cfg.local_model_embed_revision:
+            raise ValidationError("dev dense requires a frozen embedding revision")
+        spec = FrozenEmbeddingSpec(
+            model=cfg.local_model_embed,
+            model_digest=cfg.local_model_embed_revision,
+            dimension=cfg.local_model_embed_dimension,
+            profile=cfg.embedding_profile,
+        )
+        if cfg.embedding_version != spec.version:
+            raise ValidationError("dev dense index/model embedding identity mismatch")
+        admitted = getattr(router, "_local", None)
+        if admitted is None or admitted.embedding_model != spec.model:
+            raise ValidationError("dev dense requires the admitted local model gateway")
+        if admitted.embedding_dimension != spec.dimension:
+            raise ValidationError("dev dense model dimension does not match index")
+        if client is None:
+            raise ValidationError("dev dense requires an explicit Qdrant client")
+        channels["dense"] = DenseRecall(
+            client,
+            dense_collection_name(cfg),
+            GatewayEmbedder(router),
+            source=search_repo,
+            embedding_profile=spec.profile,
+            embedding_version=spec.version,
+        )
+    elif dense and client is not None and router is not None:
         if (
             cfg.app_env != "test"
             or not cfg.task_test_embedding
