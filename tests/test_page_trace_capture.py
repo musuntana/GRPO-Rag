@@ -17,8 +17,7 @@ from qdrant_client import QdrantClient
 from ragos.core.errors import PermissionDeniedError, ValidationError
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.offline_eval import evaluate_trace_bytes
-from ragos.retrieval.types import ScoredChunk
-from ragos.retrieval.types import EvalCase, GoldEvidence, RetrieverProfile
+from ragos.retrieval.types import EvalCase, GoldEvidence, RetrieverProfile, ScoredChunk
 from ragos.runtime.page_trace_capture import capture_page_ranking_trace
 from ragos.storage.repositories.search import SearchRepository, SearchTier
 from test_frozen_qwen_embedding_probe import _binding
