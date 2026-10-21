@@ -8,6 +8,8 @@ or claim semantically verified citations or a benchmark.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -22,6 +24,8 @@ from ragos.retrieval.citation import EvidenceSet, bind_markers
 from ragos.retrieval.gateway import build_generation_messages
 from ragos.retrieval.identity import EvidenceIdentity
 from ragos.retrieval.metrics import Grade, hit_at_k
+from ragos.retrieval.parse.layout import LayoutElement, parse_pdf_pages
+from ragos.retrieval.parse.page_chunker import ChunkerConfig, PageChunker
 from ragos.retrieval.types import GoldEvidence, ScoredChunk
 from ragos.retrieval.verify import verify_structural_batch
 from ragos.storage.repositories.search import SearchChunkUpsert, SearchTier
@@ -30,9 +34,6 @@ from ragos.storage.vector import QdrantVectorIndexWriter, build_filter
 TENANT = uuid5(NAMESPACE_DNS, "ragos.s1.probe.tenant")
 KB = uuid5(NAMESPACE_DNS, "ragos.s1.probe.kb")
 DOC = uuid5(NAMESPACE_DNS, "ragos.s1.probe.contract")
-DOC_VERSION = uuid5(NAMESPACE_DNS, "ragos.s1.probe.contract.version.1")
-REPRESENTATION = uuid5(NAMESPACE_DNS, "ragos.s1.probe.representation.1")
-INDEX = uuid5(NAMESPACE_DNS, "ragos.s1.probe.index.1")
 PAGES = (
     (7, "Contract section 7: the warranty lasts 24 months after acceptance."),
     (8, "Contract section 8: the retained guarantee deposit is 5 percent."),
@@ -68,37 +69,103 @@ def _context() -> TenantContext:
     )
 
 
-def _chunks() -> list[SearchChunkUpsert]:
-    updated = datetime(2026, 10, 20, tzinfo=UTC)
-    return [
-        SearchChunkUpsert(
-            id=uuid5(NAMESPACE_DNS, f"ragos.s1.probe.page.{page}"),
-            tenant_id=TENANT,
-            kb_id=KB,
-            document_id=DOC,
-            document_version_id=DOC_VERSION,
-            representation_id=REPRESENTATION,
-            index_id=INDEX,
-            parent_chunk_id=None,
-            layer="L1",
-            lang="en",
-            title="Synthetic service contract",
-            headings_text=None,
-            body=text,
-            tags_text=None,
-            metadata_json={},
-            updated_at=updated,
-            page_no=page,
-            page_count=9,
-            start_char_idx=0,
-            end_char_idx=len(text),
-            page_offset_start=0,
-            page_offset_end=len(text),
-            representation_char_count=1000,
-            parent_unit="page",
+def _chunks(
+    *, embedding_version: str = EMBEDDING_VERSION, page_texts: list[str] | None = None
+) -> list[SearchChunkUpsert]:
+    """Prepare real page-chunker output from already-extracted synthetic PDF text.
+
+    Version, parser/chunker representation, index identity and child IDs derive
+    from immutable source content. A changed page or embedding revision must
+    never overwrite a previous point under the same source identity.
+    """
+    if not embedding_version.strip() or embedding_version == "hash-test":
+        raise ValidationError("probe requires a frozen non-test embedding version")
+    texts = [text for _, text in PAGES] if page_texts is None else page_texts
+    parsed = parse_pdf_pages(
+        [[LayoutElement(element_type="text", text=text, order=0)] for text in texts],
+        parser_version="synthetic-pdf-elements-v1",
+        title="Synthetic service contract",
+    )
+    if not parsed.pages or any(page.is_empty() for page in parsed.pages):
+        raise ValidationError("cannot index an empty PDF page in the local probe")
+    chunker = PageChunker(
+        ChunkerConfig(
+            child_size=400, parent_size=1600, parent_unit="page",
+            parser_version=parsed.parser_version,
         )
-        for page, text in PAGES
-    ]
+    )
+    nodes = chunker.chunk(parsed)
+    body = parsed.flat_text()
+    source_bytes = json.dumps(
+        {
+            "parser_version": parsed.parser_version,
+            "page_texts": [page.text() for page in parsed.pages],
+        },
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    source_digest = hashlib.sha256(source_bytes).hexdigest()
+    doc_version = uuid5(DOC, f"source:{source_digest}")
+    representation = uuid5(
+        doc_version, f"parser:{parsed.parser_version};chunker:{chunker.config.version_id()}"
+    )
+    index = uuid5(representation, f"embedding:{embedding_version}")
+    node_ids = {
+        node.chunk_id: uuid5(
+            index,
+            f"node:{node.order}:{node.page_no}:{node.is_parent}:"
+            f"{node.start_char_idx}:{node.end_char_idx}:"
+            f"{hashlib.sha256(node.text.encode('utf-8')).hexdigest()}",
+        )
+        for node in nodes
+    }
+    updated = datetime(2026, 10, 20, tzinfo=UTC)
+    chunks = []
+    for node in nodes:
+        if node.is_parent:
+            continue
+        if (
+            node.page_no is None or node.page_count != parsed.page_count
+            or node.parent_chunk_id not in node_ids
+            or node.start_char_idx is None or node.end_char_idx is None
+            or node.page_offset_start is None or node.page_offset_end is None
+            or body[node.start_char_idx:node.end_char_idx] != node.text
+            or parsed.pages[node.page_no - 1].text()[
+                node.page_offset_start:node.page_offset_end
+            ] != node.text
+        ):
+            raise ValidationError("page chunk does not match its frozen source span")
+        chunks.append(
+            SearchChunkUpsert(
+                id=node_ids[node.chunk_id],
+                tenant_id=TENANT,
+                kb_id=KB,
+                document_id=DOC,
+                document_version_id=doc_version,
+                representation_id=representation,
+                index_id=index,
+                parent_chunk_id=node_ids[node.parent_chunk_id],
+                layer="L1",
+                lang="en",
+                title=parsed.title,
+                headings_text=None,
+                body=node.text,
+                tags_text=None,
+                metadata_json={},
+                updated_at=updated,
+                page_no=node.page_no,
+                page_count=node.page_count,
+                start_char_idx=node.start_char_idx,
+                end_char_idx=node.end_char_idx,
+                page_offset_start=node.page_offset_start,
+                page_offset_end=node.page_offset_end,
+                representation_char_count=len(body),
+                parent_unit="page",
+                element_type=node.element_type,
+            )
+        )
+    if not chunks:
+        raise ValidationError("page chunker produced no indexable source evidence")
+    return chunks
 
 
 def _scored_chunk(chunk: SearchChunkUpsert, score: float) -> ScoredChunk:
@@ -106,9 +173,9 @@ def _scored_chunk(chunk: SearchChunkUpsert, score: float) -> ScoredChunk:
         tenant_id=TENANT,
         kb_id=KB,
         document_id=DOC,
-        document_version_id=DOC_VERSION,
-        representation_id=REPRESENTATION,
-        index_id=INDEX,
+        document_version_id=chunk.document_version_id,
+        representation_id=chunk.representation_id,
+        index_id=chunk.index_id,
         chunk_id=chunk.id,
         representation_char_count=chunk.representation_char_count,
         parent_unit="page",
@@ -147,7 +214,7 @@ def run_probe(
     vector_client = client or QdrantClient(":memory:")
     try:
         ctx = _context()
-        chunks = _chunks()
+        chunks = _chunks(embedding_version=embedding_version)
 
         def embed_one(text: str) -> list[float]:
             result = provider.embed(texts=[text], model=embedding_model)
@@ -191,9 +258,9 @@ def run_probe(
                 or payload.get("tenant_id") != str(TENANT)
                 or payload.get("kb_id") != str(KB)
                 or payload.get("doc_id") != str(DOC)
-                or payload.get("document_version_id") != str(DOC_VERSION)
-                or payload.get("representation_id") != str(REPRESENTATION)
-                or payload.get("index_id") != str(INDEX)
+                or payload.get("document_version_id") != str(chunk.document_version_id)
+                or payload.get("representation_id") != str(chunk.representation_id)
+                or payload.get("index_id") != str(chunk.index_id)
                 or payload.get("page_no") != chunk.page_no
             ):
                 raise ValidationError("probe vector result does not match frozen evidence")
@@ -201,7 +268,7 @@ def run_probe(
         if not evidence:
             raise ValidationError("probe query returned no authorized evidence")
 
-        gold = [GoldEvidence(doc_id=DOC, grade=3, page_no=7)]
+        gold = [GoldEvidence(doc_id=DOC, grade=3, page_no=1)]
         grades = [Grade(str(x.doc_id), grade=0, page_no=x.page_no) for x in evidence]
         hit = hit_at_k(grades, gold, 2)
         answer = provider.chat(
