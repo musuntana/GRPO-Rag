@@ -152,6 +152,15 @@ def run_eval(
         )
     if split not in (DEV, HOLDOUT):
         raise ValidationError("split must be 'dev' or 'holdout'", split=split)
+    if len(cases) != len(outcomes):
+        raise ValidationError("evaluation case/outcome counts disagree")
+    if len({case.id for case in cases}) != len(cases):
+        raise ValidationError("evaluation case IDs must be unique")
+    for case, outcome in zip(cases, outcomes, strict=True):
+        if case.id != outcome.case_id:
+            raise ValidationError("evaluation outcome case_id does not match its case")
+        if case.split != split or outcome.split != split:
+            raise ValidationError("evaluation cases and outcomes must match requested split")
 
     observed_prompt_ids = {
         o.rails_prompt_id for o in outcomes if o.rails_prompt_id is not None
