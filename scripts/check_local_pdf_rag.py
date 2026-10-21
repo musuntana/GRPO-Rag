@@ -90,7 +90,8 @@ def main(argv: list[str] | None = None) -> int:
                 tier=SearchTier.STABLE,
                 prefix=prefix,
             )
-            with QdrantClient(url=qdrant_url, timeout=10) as client:
+            client = QdrantClient(url=qdrant_url, timeout=10)
+            try:
                 if any(
                     item.name == owned_collection
                     for item in client.get_collections().collections
@@ -109,6 +110,8 @@ def main(argv: list[str] | None = None) -> int:
                         for item in client.get_collections().collections
                     ):
                         client.delete_collection(collection_name=owned_collection)
+            finally:
+                client.close()
 
         encoded = json.dumps(report, sort_keys=True, ensure_ascii=False, indent=2) + "\n"
         if args.output is None:

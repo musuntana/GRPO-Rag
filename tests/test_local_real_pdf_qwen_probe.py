@@ -67,7 +67,7 @@ def test_pdf_builder_has_real_page_tree_and_validates_synthetic_inputs() -> None
     assert pdf.startswith(b"%PDF-")
     assert pdf.endswith(b"%%EOF\n")
     assert pdf == make_synthetic_pdf([p for _, p in PAGES])
-    for invalid in [[], [""], ["bad\nnewline"], ["emoji 🚀"], ["page"] * 11]:
+    for invalid in [[], ["bad\nnewline"], ["emoji 🚀"], ["page"] * 11]:
         with pytest.raises(ValidationError, match="synthetic PDF"):
             make_synthetic_pdf(invalid)
 
@@ -122,7 +122,8 @@ def test_optional_real_qdrant_http_server_uses_synthetic_pdf_only(qdrant_url) ->
         prefix=prefix, embedding_profile=spec.profile,
         embedding_version=spec.version, tier=SearchTier.STABLE,
     )
-    with QdrantClient(url=qdrant_url, timeout=5) as client:
+    client = QdrantClient(url=qdrant_url, timeout=5)
+    try:
         try:
             report = run_synthetic_pdf_model_probe(
                 SyntheticProvider(), embedding_spec=spec,
@@ -138,6 +139,8 @@ def test_optional_real_qdrant_http_server_uses_synthetic_pdf_only(qdrant_url) ->
         finally:
             if collection in {x.name for x in client.get_collections().collections}:
                 client.delete_collection(collection_name=collection)
+    finally:
+        client.close()
 
 
 def _load_cli():

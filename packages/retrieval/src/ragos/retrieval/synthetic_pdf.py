@@ -11,19 +11,19 @@ from ragos.core.errors import ValidationError
 
 
 def make_synthetic_pdf(pages: list[str]) -> bytes:
-    """Generate a bounded, text-only PDF with one physical page per string."""
+    """Generate a bounded, text-only PDF with one physical page per string (blank negative fixtures allowed)."""
     if (
         not isinstance(pages, list)
         or not 1 <= len(pages) <= 10
         or any(
             not isinstance(text, str)
-            or not 1 <= len(text) <= 500
+            or not 0 <= len(text) <= 500
             or not text.isascii()
             or any(ord(c) < 32 or ord(c) > 126 for c in text)
             for text in pages
         )
     ):
-        raise ValidationError("synthetic PDF requires 1-10 nonempty ASCII text pages")
+        raise ValidationError("synthetic PDF requires 1-10 bounded ASCII text pages")
 
     count = len(pages)
     font_id = 3 + 2 * count
