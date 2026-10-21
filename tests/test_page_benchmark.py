@@ -55,7 +55,7 @@ def test_paired_rerank_measures_same_universe_and_reports_no_text() -> None:
     result = compare_page_traces(_raw(base), _raw(improved))
     assert result["case_total"] == 1
     assert result["candidate"]["metrics"]["mrr_at_10"] == 1.0
-    assert result["delta_candidate_minus_baseline"]["mrr_at_10"] > 0
+    assert result["delta_candidate_minus_baseline"]["ndcg_at_10"] > 0
     assert result["hit_at_6_case_outcomes"]["tied"] == 1
     assert "Where is the warranty?" not in json.dumps(result)
     assert result["label_review_status"] == "not_attested_by_trace_v1"
