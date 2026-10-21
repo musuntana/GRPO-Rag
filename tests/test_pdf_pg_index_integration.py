@@ -42,7 +42,7 @@ from test_storage_integration import (
 __all__ = ["database"]
 
 
-def _real_pdf_fixture(engine, tmp_path):
+def _real_pdf_fixture(engine, tmp_path, *, embedding=None):
     tenant_id, kb_id, doc_id = resources(engine)
     ctx = context(tenant_id, kb_id)
     pdf = _make_pdf([
@@ -96,8 +96,8 @@ def _real_pdf_fixture(engine, tmp_path):
         source_ref=source_ref,
         representation_ref=rep_ref,
         representation_digest=rep_digest,
-        embedding_profile="hash-test",
-        embedding_version="sha256-hash-v1",
+        embedding_profile=embedding.spec.profile if embedding else "hash-test",
+        embedding_version=embedding.spec.version if embedding else "sha256-hash-v1",
         expected_active_index_id=active,
     )
     factory = sessionmaker(engine, class_=Session, expire_on_commit=False)
@@ -109,12 +109,16 @@ def _real_pdf_fixture(engine, tmp_path):
         assert claimed.id == prepared.task_id
 
     client = QdrantClient(":memory:")
-    writer = QdrantVectorIndexWriter(
-        client=client,
-        embedding_profile=plan.embedding_profile,
-        embedding_version=plan.embedding_version,
-        allow_test_embedding=True,
-    )
+    if embedding is not None:
+        embedding.require_plan(plan)
+        writer = embedding.writer(client)
+    else:
+        writer = QdrantVectorIndexWriter(
+            client=client,
+            embedding_profile=plan.embedding_profile,
+            embedding_version=plan.embedding_version,
+            allow_test_embedding=True,
+        )
     return PreparedFixture(
         ctx, store, plan, factory, claimed.id, claimed.attempts, client, writer, "pdf"
     )
