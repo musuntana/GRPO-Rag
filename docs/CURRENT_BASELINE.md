@@ -26,6 +26,8 @@
 
 > **2026-10-21 增量（PR #15 已合并）**：新增读取 PostgreSQL `chat_request` 的用户/会话隔离运行状态 API `GET /chat/conversations/{conversation_id}/runs/{run_id}`。运行中状态只提示轮询或人工排查（10 分钟阈值不构成租约失效证明），已提交的回答必须通过 SQL 助手消息与完整连续 SSE 日志双重验证才能标记为可回放；失败、事件丢失或损坏均不自动再次调用模型。开发分支 [完整 CI #39602526009](https://github.com/musuntana/GRPO-Rag/actions/runs/39602526009) **964 passed**，Ruff 和 Alembic 通过；CI 临时 push 触发随后恢复为仅手动，合并后的 main 没有再次运行完整套件。仍待解决心跳/任务租约、真正安全的人工对账修复、分布式在途 SSE 恢复及真实模型计费核验。
 
+> **2026-10-21 增量（PR #16 已合并）**：加入可在本机执行的 `scripts/check_local_pdf_rag.py`，使用真实的合成 PDF 字节与 Poppler、显式指定的 Qwen Chat/Embedding OpenAI 兼容接口、Qdrant 检索及结构化引用核验，输出不含原文或模型答案的 JSON 验收报告。开发分支 [完整 CI #39609139927](https://github.com/musuntana/GRPO-Rag/actions/runs/39609139927) **971 passed**，Ruff / Alembic 通过，测试使用的是合成模型响应而非真实 Qwen 权重；Qdrant HTTP 和 PDF 解析是实际服务/解析器。CI 触发规则已恢复为仅手动，**最新 main 没有再跑全套**。实际 Qwen 模型、官方模型权重版本/维度、真实 API 响应仍需操作员在 Mac 上运行脚本并保存测试报告；这不是企业正式 ModelRouter、已发布 PostgreSQL 文档、真实评估集或 GRPO 训练。
+
 ## 本轮治理内容
 
 - `push` 与 `pull_request` 在旧 workflow 同时触发完整 CI，容易为一次代码修改重复记账。统一改为 **手动 `workflow_dispatch`**：`Quick checks (manual)` 和 `Full integration (manual)`。不满足自动强制合并门槛时，由 reviewer 核对 **最新 HEAD 与手动 CI 结果一致**，不可盲信旧 run；团队如需 required status checks 应单独调整 GitHub 分支保护。
