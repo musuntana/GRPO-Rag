@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -318,29 +319,23 @@ _MAX_COMPLETED_LOG_BYTES = 8 * 1024 * 1024
 _MAX_REPLAY_PAGE_SIZE = 500
 
 
-@router.get(
-    "/conversations/{conversation_id}/runs/{run_id}/events",
-    dependencies=[Depends(require_chat_actor)],
-)
-def replay_completed_run(
+
+def _verified_completed_run_events(
+    *,
     conversation_id: UUID,
     run_id: UUID,
-    session: DBSession,
-    tenant_ctx: TenantCtx,
-    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
-    limit: int = Query(default=200, ge=1, le=_MAX_REPLAY_PAGE_SIZE),
+    messages: MessageRepository,
+    scope_key: str,
 ):
-    """Return a cursor-based SSE replay without starting or billing a new turn.
+    """Confirm both a committed assistant row and consistent bounded SSE log.
 
-    Authorization comes from a committed assistant message in the caller-owned
-    conversation. No event log path can be chosen by the client; tenant/user
-    scope is derived server-side and run metadata is cross-checked.
+    A status inquiry cannot label a run replayable using a file's existence
+    alone. The same verified evidence gate is used by completed-run replay.
     """
-    tenant_ctx = tenant_ctx.bind_user(resolve_user(session, tenant_ctx))
-    messages = MessageRepository(session=session, tenant_ctx=tenant_ctx)
-    message = messages.require_completed_run(conversation_id=conversation_id, run_id=run_id)
+    message = messages.require_completed_run(
+        conversation_id=conversation_id, run_id=run_id
+    )
     log = EventLog()
-    scope_key = tenant_ctx.require_private_scope_key()
     path = log.events_path(scope_key=scope_key, run_id=run_id)
     if not path.is_file() or path.stat().st_size > _MAX_COMPLETED_LOG_BYTES:
         raise NotFoundError("Completed chat run events not found")
@@ -360,10 +355,109 @@ def replay_completed_run(
         or events[-1].data.get("run_id") != str(run_id)
         or events[-1].data.get("message_id") != str(message.id)
     ):
-        # A torn or mismatched event log must not be represented as a
-        # successfully replayable completed run.
         raise NotFoundError("Completed chat run events not found")
+    return events
 
+
+_CLAIM_ATTENTION_AGE = timedelta(minutes=10)
+
+
+@router.get(
+    "/conversations/{conversation_id}/runs/{run_id}",
+    dependencies=[Depends(require_chat_actor)],
+)
+def chat_run_status(
+    conversation_id: UUID,
+    run_id: UUID,
+    session: DBSession,
+    tenant_ctx: TenantCtx,
+):
+    """Read-only, actor-scoped run diagnostics; NEVER reclaim or regenerate.
+
+    A claim older than the advisory age is not proof that the worker died:
+    there is no heartbeat/lease. Treat it as an operator reconciliation
+    concern, not as a safe automatic retry trigger.
+    """
+    tenant_ctx = tenant_ctx.bind_user(resolve_user(session, tenant_ctx))
+    request = ChatRequestRepository(session=session, tenant_ctx=tenant_ctx).require_actor_run(
+        conversation_id=conversation_id, run_id=run_id
+    )
+    status = request.status
+    if status not in {"claimed", "completed", "failed"}:
+        raise ValidationError("Unknown chat request lifecycle state")
+
+    replay_ready = False
+    attention_required = False
+    if status == "claimed":
+        created = request.created_at
+        if created.tzinfo is None:
+            # PostgreSQL timestamptz is expected; fail closed if the DB
+            # returns an ambiguous clock value instead of guessing its zone.
+            raise ValidationError("Chat request timestamp lacks timezone")
+        attention_required = datetime.now(UTC) - created >= _CLAIM_ATTENTION_AGE
+        next_action = "operator_reconcile" if attention_required else "poll_status"
+    elif status == "completed":
+        try:
+            _verified_completed_run_events(
+                conversation_id=conversation_id,
+                run_id=run_id,
+                messages=MessageRepository(session=session, tenant_ctx=tenant_ctx),
+                scope_key=tenant_ctx.require_private_scope_key(),
+            )
+            replay_ready = True
+        except (NotFoundError, OSError, ValueError, KeyError, TypeError):
+            # The SQL commit is authoritative for completed. A lost/corrupt
+            # JSONL file means replay is unavailable, not that it is safe to
+            # execute the model again.
+            pass
+        attention_required = not replay_ready
+        next_action = "replay_events" if replay_ready else "operator_reconcile"
+    else:
+        attention_required = True
+        next_action = "operator_reconcile"
+
+    result = {
+        "run_id": str(run_id),
+        "status": status,
+        "replay_ready": replay_ready,
+        "attention_required": attention_required,
+        "next_action": next_action,
+        "events_url": (
+            f"/chat/conversations/{conversation_id}/runs/{run_id}/events"
+            if replay_ready else None
+        ),
+    }
+    return JSONResponse(
+        content=result,
+        headers={"Cache-Control": "no-store", "X-Run-ID": str(run_id)},
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}/runs/{run_id}/events",
+    dependencies=[Depends(require_chat_actor)],
+)
+def replay_completed_run(
+    conversation_id: UUID,
+    run_id: UUID,
+    session: DBSession,
+    tenant_ctx: TenantCtx,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    limit: int = Query(default=200, ge=1, le=_MAX_REPLAY_PAGE_SIZE),
+):
+    """Return a cursor-based SSE replay without starting or billing a new turn.
+
+    Authorization comes from a committed assistant message in the caller-owned
+    conversation. No event log path can be chosen by the client; tenant/user
+    scope is derived server-side and run metadata is cross-checked.
+    """
+    tenant_ctx = tenant_ctx.bind_user(resolve_user(session, tenant_ctx))
+    events = _verified_completed_run_events(
+        conversation_id=conversation_id,
+        run_id=run_id,
+        messages=MessageRepository(session=session, tenant_ctx=tenant_ctx),
+        scope_key=tenant_ctx.require_private_scope_key(),
+    )
     cursor = parse_last_event_id(last_event_id) or 0
     selected = [event.to_sse() for event in events if event.event_id > cursor][:limit]
     return StreamingResponse(

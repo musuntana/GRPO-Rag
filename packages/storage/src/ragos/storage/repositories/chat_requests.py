@@ -86,6 +86,26 @@ class ChatRequestRepository(TenantRepository[ChatRequest]):
             )
         return record, False
 
+    def require_actor_run(
+        self, *, conversation_id: UUID, run_id: UUID
+    ) -> ChatRequest:
+        """Read-only state lookup; never acquires an execution lease.
+
+        Authorize conversation ownership first, then require the same tenant,
+        actor and conversation on the claim itself. The status API must not
+        SELECT FOR UPDATE or change an ambiguous billable run.
+        """
+        self.conversations.require_by_id(conversation_id)
+        request = self.session.exec(
+            self.scoped_statement()
+            .where(ChatRequest.id == run_id)
+            .where(ChatRequest.user_id == self.tenant_ctx.require_user_id())
+            .where(ChatRequest.conversation_id == conversation_id)
+        ).first()
+        if request is None:
+            raise NotFoundError("Chat request run not found")
+        return request
+
     def _lock_actor_run(self, *, conversation_id: UUID, run_id: UUID) -> ChatRequest:
         self.conversations.require_by_id(conversation_id)
         request = self.session.exec(
