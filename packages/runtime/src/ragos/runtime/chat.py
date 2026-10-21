@@ -28,7 +28,7 @@ import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from ragos.core.errors import ValidationError
 from ragos.core.logging import get_logger
@@ -114,8 +114,14 @@ class ChatService:
         if not text:
             raise ValidationError("message must not be empty", field="message")
 
-        run = run_id or uuid4()
         sink = self.deps.sink
+        # A recoverable stream MUST persist under the very run_id written to
+        # messages and run_started/run_finished. Previously, the SSE log used
+        # a different UUID than the model turn, so reconnect could not replay.
+        sink_run_id = UUID(str(sink.run_id))
+        run = run_id or sink_run_id
+        if run != sink_run_id:
+            raise ValidationError("chat sink/run identity mismatch")
         user_id = self.tenant_ctx.require_user_id()
         started = time.monotonic()
 
