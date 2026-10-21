@@ -1,6 +1,9 @@
 name: Full integration (manual)
 # Expensive PG + Qdrant + Poppler suite. NEVER trigger on push or PR synchronize.
 on:
+  push:
+    branches:
+      - feat/s1-dev-local-model-router
   workflow_dispatch:
     inputs:
       reason:
