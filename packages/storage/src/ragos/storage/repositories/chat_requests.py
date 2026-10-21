@@ -17,7 +17,7 @@ from ragos.storage.models.base import utc_now
 from ragos.storage.repositories.base import TenantRepository
 from ragos.storage.repositories.conversations import ConversationRepository
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 _KEY_PATTERN = re.compile(r"[A-Za-z0-9_-]{12,128}\Z", re.ASCII)
 _SHA_PATTERN = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
