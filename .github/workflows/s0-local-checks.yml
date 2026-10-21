@@ -24,6 +24,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install uv==0.12.23
+      - name: Ensure Poppler PDF text extractor for real-byte contract tests
+        run: |
+          if ! command -v pdftotext >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq poppler-utils
+          fi
+          command -v pdftotext
       - run: uv sync --frozen --no-editable --extra dev --python 3.12
       - run: .venv/bin/ruff check apps packages tests scripts infra/migrations/env.py infra/migrations/versions/0009_fail_closed_rls.py infra/migrations/versions/0010_immutable_evidence_lineage.py infra/migrations/versions/0011_index_reconciliation.py infra/migrations/versions/0012_task_execution_lifecycle.py
       - run: .venv/bin/alembic upgrade head

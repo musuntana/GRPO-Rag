@@ -99,3 +99,47 @@ This test still starts with *already extracted* synthetic PDF page elements.
 A real PDF byte parser and scanned-document OCR/vision, table layout recovery,
 real tenant KB ingestion, durable PG publication and authenticated source
 hydration remain separate features.
+
+## Real PDF bytes -> page elements (Poppler text-only adapter)
+
+`ragos.retrieval.parse.pdf_bytes.extract_pdf_bytes` now accepts genuine PDF
+**bytes**, shells out without a shell to Poppler `pdftotext` in a disposable
+private directory, and constructs the repository's `ParsedDocument` with
+real 1-based page boundaries. `run_probe(pdf_bytes=...)` then reuses the
+`PageChunker`, immutable representation/index identities, Qdrant writer,
+scoped retrieval and structural citation verifier.
+
+- Fixed `-layout -enc UTF-8 -eol unix` text-extraction profile; loss of
+  table/diagram layout, image text, bounding boxes and metadata is a **known
+  limitation**, not certified high-fidelity parsing.
+- Poppler form-feed delimiters preserve page order. An unreadable, blank,
+  scan-only or protected page rejects the complete operation instead of
+  silently collapsing page numbers or inventing evidence.
+- Default input cap 16 MiB, text-output cap 8 MiB, 200-page cap and 20-second
+  process timeout. The parser writes only to a temporary private directory,
+  disables stdout/stderr exposure and returns generic domain errors. These
+  caps do not replace a real isolated worker's CPU/memory/disk limits.
+- Source identity for PDF-backed probes derives from actual **PDF file bytes**
+  (SHA-256), not merely extracted text. Representation identity also includes
+  the extracted-text fingerprint so a changed extraction cannot silently
+  reuse old evidence IDs. Embedding identity continues to select the index.
+- A real two-page PDF byte stream is constructed directly inside the tests
+  (no fixture file or PDF library); CI invokes the **real Poppler executable**
+  and the installed page chunker, plus in-memory Qdrant integration. Tests
+  also cover bad PDF magic, invalid binary, blank/scan-only pages, page/input/
+  output caps and source-byte version changes. A missing local Poppler binary
+  is a declared provider error; CI ensures one is installed.
+
+Local setup (developer Mac):
+
+```bash
+brew install poppler
+uv sync --frozen --extra dev --python 3.12
+.venv/bin/pytest -q tests/test_pdf_byte_extraction.py
+```
+
+This does **not** expose an untrusted file-upload API or index user PDFs.
+The CLI remains synthetic-only, intentionally, until tenant authorization,
+persistent document ingest, egress/budget controls and parser process isolation
+have been implemented. Do not send private enterprise PDF data to external
+models from the dev probe.
