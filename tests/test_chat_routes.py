@@ -99,6 +99,7 @@ class _FakeConversations:
 class _FakeMessages:
     def __init__(self) -> None:
         self.appended: list[dict] = []
+        self.records: list = []
         self.feedback_records: list[dict] = []
         self.conversations = _FakeConversations()
 
@@ -106,14 +107,27 @@ class _FakeMessages:
         from ragos.storage.models.app import MessageIndex
 
         self.appended.append(kwargs)
-        return MessageIndex(
+        message = MessageIndex(
             id=uuid4(), tenant_id=UUID(TENANT_ID), conversation_id=kwargs["conversation_id"],
             role=kwargs["role"], content=kwargs["content"],
             run_id=kwargs.get("run_id"), citations=list(kwargs.get("citations") or []),
         )
+        self.records.append(message)
+        return message
 
     def list_for_conversation(self, **kwargs):
         return []
+
+    def require_completed_run(self, *, conversation_id, run_id):
+        self.conversations.require_by_id(conversation_id)
+        for message in self.records:
+            if (
+                message.conversation_id == conversation_id
+                and message.run_id == run_id
+                and message.role == "assistant"
+            ):
+                return message
+        raise NotFoundError("Completed chat run not found")
 
     def require_in_conversation(self, message_id: UUID, conversation_id: UUID):
         from ragos.storage.models.app import MessageIndex
@@ -241,9 +255,9 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
     )
     monkeypatch.setattr(chat_route, "build_parent_resolver", lambda **kw: None)
 
-    def _fake_service(*, session, tenant_ctx, payload):
+    def _fake_service(*, session, tenant_ctx, payload, run_id):
         return _service(messages=messages, retrieval=retrieval, tasks=tasks, tenant_ctx=tenant_ctx,
-                        payload=payload, tmp_path=tmp_path)
+                        payload=payload, tmp_path=tmp_path, run_id=run_id)
 
     monkeypatch.setattr(chat_route, "_service", _fake_service)
 
@@ -257,10 +271,11 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
     client.users = users  # type: ignore[attr-defined]
     client.messages = messages  # type: ignore[attr-defined]
     client.tasks = tasks  # type: ignore[attr-defined]
+    client.retrieval = retrieval  # type: ignore[attr-defined]
     return client
 
 
-def _service(*, messages, retrieval, tasks, tenant_ctx, payload, tmp_path) -> Any:
+def _service(*, messages, retrieval, tasks, tenant_ctx, payload, tmp_path, run_id) -> Any:
     from ragos.runtime.chat import ChatService
 
     return ChatService(
@@ -269,7 +284,11 @@ def _service(*, messages, retrieval, tasks, tenant_ctx, payload, tmp_path) -> An
         deps=ChatDependencies(
             retrieval=retrieval,
             memory=_FakeMemory(),
-            sink=EventSink(EventLog(tmp_path), scope_key="scope", run_id=uuid4()),
+            sink=EventSink(
+                EventLog(tmp_path),
+                scope_key=tenant_ctx.require_private_scope_key(),
+                run_id=run_id,
+            ),
             messages=messages,
             tasks=tasks,
             retriever_profile_id=payload.retriever_profile_id,
@@ -473,3 +492,122 @@ def test_feedback_requires_authentication(client: TestClient) -> None:
     )
 
     assert resp.status_code == 401
+
+
+# -- reconnect: completed run replay never calls the model -------------------
+
+def _send_run(client: TestClient):
+    return client.post(
+        f"/chat/conversations/{CONVERSATION_ID}/messages",
+        headers=_headers(),
+        json={"message": "what was revenue?", "retriever_profile_id": PROFILE_ID},
+    )
+
+
+def test_sse_run_id_matches_persisted_messages_and_event_log(client: TestClient) -> None:
+    import json
+
+    response = _send_run(client)
+    assert response.status_code == 200
+    run_id = response.headers["X-Run-ID"]
+    starts = [
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines() if line.startswith("data: ")
+    ]
+    assert starts[0]["run_id"] == run_id
+    finished = starts[-1]
+    assert finished["run_id"] == run_id
+    messages = client.messages.records  # type: ignore[attr-defined]
+    assert len(messages) == 2
+    assert all(str(m.run_id) == run_id for m in messages)
+    assert str(messages[-1].id) == finished["message_id"]
+
+
+def test_get_replays_without_new_message_model_call_or_writeback(client: TestClient) -> None:
+    original = _send_run(client)
+    run_id = original.headers["X-Run-ID"]
+    counts = (
+        len(client.messages.appended),  # type: ignore[attr-defined]
+        len(client.tasks.enqueued),  # type: ignore[attr-defined]
+        len(client.retrieval.calls),  # type: ignore[attr-defined]
+    )
+    url = f"/chat/conversations/{CONVERSATION_ID}/runs/{run_id}/events"
+    replay = client.get(url, headers=_headers())
+    assert replay.status_code == 200
+    assert replay.headers["X-Run-ID"] == run_id
+    assert replay.text == original.text
+
+    ids = [
+        int(line.removeprefix("id: "))
+        for line in original.text.splitlines() if line.startswith("id: ")
+    ]
+    resumed = client.get(url, headers={**_headers(), "Last-Event-ID": "2"})
+    assert resumed.status_code == 200
+    remaining = [
+        int(line.removeprefix("id: "))
+        for line in resumed.text.splitlines() if line.startswith("id: ")
+    ]
+    assert remaining == [id_ for id_ in ids if id_ > 2]
+    bounded = client.get(url + "?limit=1", headers=_headers())
+    assert bounded.status_code == 200
+    assert bounded.text.count("id: ") == 1
+    assert counts == (
+        len(client.messages.appended),  # type: ignore[attr-defined]
+        len(client.tasks.enqueued),  # type: ignore[attr-defined]
+        len(client.retrieval.calls),  # type: ignore[attr-defined]
+    )
+
+
+def test_post_with_reconnect_cursor_is_rejected_before_model_or_message(
+    client: TestClient,
+) -> None:
+    original = _send_run(client)
+    run_id = original.headers["X-Run-ID"]
+    response = client.post(
+        f"/chat/conversations/{CONVERSATION_ID}/messages",
+        headers={**_headers(), "Last-Event-ID": "1"},
+        json={"message": "what was revenue?", "retriever_profile_id": PROFILE_ID},
+    )
+    assert response.status_code == 422
+    assert len(client.retrieval.calls) == 1  # type: ignore[attr-defined]
+    assert len(client.messages.appended) == 2  # type: ignore[attr-defined]
+    assert run_id == original.headers["X-Run-ID"]
+
+
+def test_replay_refuses_unknown_run_or_wrong_conversation(client: TestClient) -> None:
+    original = _send_run(client)
+    run_id = original.headers["X-Run-ID"]
+    unknown = client.get(
+        f"/chat/conversations/{CONVERSATION_ID}/runs/{uuid4()}/events",
+        headers=_headers(),
+    )
+    assert unknown.status_code == 404
+    wrong = client.get(
+        f"/chat/conversations/{uuid4()}/runs/{run_id}/events",
+        headers=_headers(),
+    )
+    assert wrong.status_code == 404
+
+
+def test_replay_rejects_missing_event_log_even_with_committed_messages(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    response = _send_run(client)
+    run_id = response.headers["X-Run-ID"]
+    monkeypatch.setattr(
+        chat_route, "EventLog", lambda *a, **kw: EventLog(tmp_path / "missing")
+    )
+    replay = client.get(
+        f"/chat/conversations/{CONVERSATION_ID}/runs/{run_id}/events",
+        headers=_headers(),
+    )
+    assert replay.status_code == 404
+
+
+def test_replay_requires_authentication(client: TestClient) -> None:
+    original = _send_run(client)
+    run_id = original.headers["X-Run-ID"]
+    unauth = client.get(
+        f"/chat/conversations/{CONVERSATION_ID}/runs/{run_id}/events"
+    )
+    assert unauth.status_code == 401

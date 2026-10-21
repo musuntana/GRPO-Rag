@@ -400,3 +400,29 @@ def test_an_empty_answer_produces_no_deltas(tmp_path) -> None:
     events = _run(service)
 
     assert [e for e in events if e.event == "token_delta"] == []
+
+
+def test_turn_uses_one_identity_for_events_and_persisted_messages(tmp_path) -> None:
+    service, _r, _m, messages, _tasks = _service(tmp_path)
+    events = _run(service)
+    run_id = str(service.deps.sink.run_id)
+    assert events[0].data["run_id"] == run_id
+    assert events[-1].data["run_id"] == run_id
+    assert all(str(item["run_id"]) == run_id for item in messages.appended)
+
+
+def test_mismatched_explicit_run_id_rejected_before_any_side_effect(tmp_path) -> None:
+    service, retrieval, _memory, messages, _tasks = _service(tmp_path)
+
+    async def execute():
+        await service.run_turn(
+            conversation_id=CONVERSATION_ID,
+            user_message="what was revenue?",
+            run_id=uuid4(),
+        )
+
+    with pytest.raises(ValidationError, match="sink/run identity mismatch"):
+        asyncio.run(execute())
+    assert retrieval.calls == []
+    assert messages.appended == []
+    assert service.deps.sink.emitted() == []

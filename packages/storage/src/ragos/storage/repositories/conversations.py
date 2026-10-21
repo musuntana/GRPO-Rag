@@ -147,6 +147,28 @@ class MessageRepository(TenantRepository[MessageIndex]):
         )
         return list(self.session.exec(statement).all())
 
+    def require_completed_run(
+        self, *, conversation_id: UUID, run_id: UUID
+    ) -> MessageIndex:
+        """Authorize a replay by a committed assistant message of this actor.
+
+        Use a scoped SQL query rather than the paginated conversation history,
+        so older completed runs remain accessible. Unknown, unfinished and
+        foreign-actor runs are indistinguishable (404).
+        """
+        self.conversations.require_by_id(conversation_id)
+        statement = (
+            self.scoped_statement()
+            .where(MessageIndex.conversation_id == conversation_id)
+            .where(MessageIndex.run_id == run_id)
+            .where(MessageIndex.role == "assistant")
+            .limit(1)
+        )
+        message = self.session.exec(statement).first()
+        if message is None:
+            raise NotFoundError("Completed chat run not found")
+        return message
+
     def require_in_conversation(self, message_id: UUID, conversation_id: UUID) -> MessageIndex:
         for message in self.list_for_conversation(
             scope_key=self.scope_key, conversation_id=conversation_id

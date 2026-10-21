@@ -14,7 +14,7 @@ import asyncio
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from ragos.core.errors import (
@@ -129,6 +129,7 @@ def _service(
     session: Session,
     tenant_ctx: TenantContext,
     payload: SendMessageRequest,
+    run_id: UUID,
 ) -> ChatService:
     """Assemble one chat turn's dependencies.
 
@@ -138,7 +139,7 @@ def _service(
     """
     memory_profile = _require_memory_profile(session, tenant_ctx)
     router = ModelRouter(session)
-    sink = EventSink(EventLog(), scope_key=tenant_ctx.require_private_scope_key(), run_id=uuid4())
+    sink = EventSink(EventLog(), scope_key=tenant_ctx.require_private_scope_key(), run_id=run_id)
 
     return ChatService(
         session=session,
@@ -200,29 +201,41 @@ async def send_message(
     tenant_ctx: TenantCtx,
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ):
-    """Stream a turn as SSE.
+    """Start a NEW run only; replay always uses the separate authenticated GET.
 
-    ``Last-Event-ID`` resumes: the sink replays from the run's JSONL log before
-    following live events, so a reconnect neither loses an acknowledged event nor
-    repeats one.
+    Re-sending this POST with Last-Event-ID must not silently call the model
+    again. Note: clients also need a durable request idempotency key for safe
+    blind retries without a cursor; that is a separate future contract.
     """
+    if last_event_id is not None:
+        raise ValidationError(
+            "Reconnection must GET the existing run events, not POST a new message"
+        )
     user_id = resolve_user(session, tenant_ctx)
     tenant_ctx = tenant_ctx.bind_user(user_id)
 
-    service = _service(session=session, tenant_ctx=tenant_ctx, payload=payload)
+    run_id = uuid4()
+    service = _service(session=session, tenant_ctx=tenant_ctx, payload=payload, run_id=run_id)
     # Confirm the conversation belongs to this actor before any model call, so
     # another actor's id is a 404 rather than an expensive refusal.
     service.deps.messages.conversations.require_by_id(conversation_id)
 
     async def _produce() -> None:
-        await service.run_turn(conversation_id=conversation_id, user_message=payload.message)
-        session.commit()
+        try:
+            await service.run_turn(
+                conversation_id=conversation_id, user_message=payload.message, run_id=run_id
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            await service.deps.sink.close()
+            raise
 
     async def _stream():
         producer = asyncio.create_task(_produce())
         try:
             async for event in service.deps.sink.stream(
-                last_event_id=parse_last_event_id(last_event_id)
+                last_event_id=None
             ):
                 yield event.to_sse()
         finally:
@@ -233,7 +246,77 @@ async def send_message(
     return StreamingResponse(
         _stream(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+            "X-Run-ID": str(run_id),
+        },
+    )
+
+
+# This is intentionally a finite, completed-run replay. There is no process-local
+# registry or attempt to reattach a new request to an unfinished producer.
+_MAX_COMPLETED_REPLAY_EVENTS = 2000
+_MAX_COMPLETED_LOG_BYTES = 8 * 1024 * 1024
+_MAX_REPLAY_PAGE_SIZE = 500
+
+
+@router.get(
+    "/conversations/{conversation_id}/runs/{run_id}/events",
+    dependencies=[Depends(require_chat_actor)],
+)
+def replay_completed_run(
+    conversation_id: UUID,
+    run_id: UUID,
+    session: DBSession,
+    tenant_ctx: TenantCtx,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    limit: int = Query(default=200, ge=1, le=_MAX_REPLAY_PAGE_SIZE),
+):
+    """Return a cursor-based SSE replay without starting or billing a new turn.
+
+    Authorization comes from a committed assistant message in the caller-owned
+    conversation. No event log path can be chosen by the client; tenant/user
+    scope is derived server-side and run metadata is cross-checked.
+    """
+    tenant_ctx = tenant_ctx.bind_user(resolve_user(session, tenant_ctx))
+    messages = MessageRepository(session=session, tenant_ctx=tenant_ctx)
+    message = messages.require_completed_run(conversation_id=conversation_id, run_id=run_id)
+    log = EventLog()
+    scope_key = tenant_ctx.require_private_scope_key()
+    path = log.events_path(scope_key=scope_key, run_id=run_id)
+    if not path.is_file() or path.stat().st_size > _MAX_COMPLETED_LOG_BYTES:
+        raise NotFoundError("Completed chat run events not found")
+    events = log.read_after(
+        scope_key=scope_key,
+        run_id=run_id,
+        after_id=0,
+        limit=_MAX_COMPLETED_REPLAY_EVENTS + 1,
+    )
+    if (
+        not events
+        or len(events) > _MAX_COMPLETED_REPLAY_EVENTS
+        or events[0].event != "run_started"
+        or events[0].data.get("run_id") != str(run_id)
+        or events[0].data.get("conversation_id") != str(conversation_id)
+        or events[-1].event != "run_finished"
+        or events[-1].data.get("run_id") != str(run_id)
+        or events[-1].data.get("message_id") != str(message.id)
+    ):
+        # A torn or mismatched event log must not be represented as a
+        # successfully replayable completed run.
+        raise NotFoundError("Completed chat run events not found")
+
+    cursor = parse_last_event_id(last_event_id) or 0
+    selected = [event.to_sse() for event in events if event.event_id > cursor][:limit]
+    return StreamingResponse(
+        iter(selected),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+            "X-Run-ID": str(run_id),
+        },
     )
 
 
