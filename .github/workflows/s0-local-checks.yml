@@ -1,9 +1,6 @@
 name: Full integration (manual)
 # Expensive PG + Qdrant + Poppler suite. NEVER trigger on push or PR synchronize.
 on:
-  push:
-    branches:
-      - fix/s1-chat-commit-before-final-sse
   workflow_dispatch:
     inputs:
       reason:
