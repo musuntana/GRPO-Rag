@@ -1,18 +1,9 @@
-name: Full integration (manual)
-# Expensive PG + Qdrant + Poppler suite. NEVER trigger on push or PR synchronize.
+name: Full integration (temporary one-shot governance validation)
+# Temporary branch-only verification; this config will not be merged.
 on:
-  workflow_dispatch:
-    inputs:
-      reason:
-        description: Why is a full integration validation needed?
-        type: choice
-        required: true
-        default: pre-merge
-        options:
-          - pre-merge
-          - release
-          - regression
-          - incident
+  push:
+    branches:
+      - chore/ci-on-demand-and-baseline-hygiene
 permissions:
   contents: read
 concurrency:
