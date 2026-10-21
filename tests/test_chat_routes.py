@@ -8,13 +8,16 @@ leak, and the event stream is framed as SSE with the request id intact.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from ragos.auth.jwt import encode_dev_token
-from ragos.core.errors import NotFoundError
+from ragos.core.errors import ConflictError, NotFoundError
 from ragos.retrieval.citation import Citation, CitationStatus
 from ragos.retrieval.pipeline import RAGResult, RetrievalExplain
 from ragos.retrieval.types import RetrieverProfile, ScoredChunk
@@ -46,6 +49,7 @@ def _headers(*, tenant_id: str = TENANT_ID, subject: str = "u_1") -> dict[str, s
     return {
         "Authorization": f"Bearer {encode_dev_token(claims)}",
         "X-Tenant-Id": tenant_id,
+        "Idempotency-Key": uuid4().hex,
     }
 
 
@@ -55,6 +59,9 @@ class _FakeSession:
 
     def commit(self) -> None:
         self.committed = True
+
+    def rollback(self) -> None:
+        self.committed = False
 
 
 class _FakeUserResolver:
@@ -138,6 +145,64 @@ class _FakeMessages:
             id=message_id, tenant_id=UUID(TENANT_ID), conversation_id=conversation_id,
             role="assistant", content="answer", citations=[],
         )
+
+
+class _FakeChatRequests:
+    """Deterministic in-memory test double; real concurrency uses PostgreSQL."""
+
+    def __init__(self, messages: _FakeMessages) -> None:
+        self.messages = messages
+        self.claims: dict[tuple, SimpleNamespace] = {}
+
+    def repo(self, session, tenant_ctx):
+        return _FakeChatRequestRepo(self, tenant_ctx)
+
+
+class _FakeChatRequestRepo:
+    def __init__(self, store: _FakeChatRequests, tenant_ctx) -> None:
+        self.store = store
+        self.tenant_ctx = tenant_ctx
+
+    def claim(self, *, conversation_id, idempotency_key, request_digest):
+        self.store.messages.conversations.require_by_id(conversation_id)
+        key = (
+            self.tenant_ctx.tenant_id, self.tenant_ctx.require_user_id(),
+            conversation_id, idempotency_key,
+        )
+        existing = self.store.claims.get(key)
+        if existing:
+            if existing.request_digest != request_digest:
+                raise ConflictError("Idempotency-Key is already bound to a different request")
+            return existing, False
+        result = SimpleNamespace(
+            id=uuid4(), status="claimed", request_digest=request_digest
+        )
+        self.store.claims[key] = result
+        return result, True
+
+    def _require(self, conversation_id, run_id):
+        self.store.messages.conversations.require_by_id(conversation_id)
+        for key, item in self.store.claims.items():
+            if (
+                key[0] == self.tenant_ctx.tenant_id
+                and key[1] == self.tenant_ctx.require_user_id()
+                and key[2] == conversation_id and item.id == run_id
+            ):
+                return item
+        raise NotFoundError("Chat request run not found")
+
+    def complete(self, *, conversation_id, run_id):
+        item = self._require(conversation_id, run_id)
+        if item.status != "claimed":
+            raise ConflictError("Chat request cannot complete twice")
+        item.status = "completed"
+        return item
+
+    def mark_failed(self, *, conversation_id, run_id):
+        item = self._require(conversation_id, run_id)
+        if item.status == "claimed":
+            item.status = "failed"
+        return item
 
 
 class _FakeFeedback:
@@ -227,6 +292,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
     messages = _FakeMessages()
     retrieval = _FakeRetrieval()
     tasks = _FakeTasks()
+    claims = _FakeChatRequests(messages)
 
     monkeypatch.setattr(chat_route, "resolve_actor_user_id", users)
     monkeypatch.setattr(
@@ -240,6 +306,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
         chat_route, "FeedbackRepository", lambda session, tenant_ctx: _FakeFeedback(messages)
     )
     monkeypatch.setattr(chat_route, "TaskRepository", lambda session, tenant_ctx: tasks)
+    monkeypatch.setattr(chat_route, "ChatRequestRepository", claims.repo)
     monkeypatch.setattr(chat_route, "MemoryFactStore", lambda session, tenant_ctx, **kw: None)
     monkeypatch.setattr(chat_route, "MemoryManager", lambda **kw: _FakeMemory())
     monkeypatch.setattr(chat_route, "ModelRouter", lambda session: object())
@@ -273,6 +340,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
     client.messages = messages  # type: ignore[attr-defined]
     client.tasks = tasks  # type: ignore[attr-defined]
     client.retrieval = retrieval  # type: ignore[attr-defined]
+    client.claims = claims  # type: ignore[attr-defined]
     return client
 
 
@@ -624,3 +692,88 @@ def test_final_sse_event_sent_after_transaction_commit(client: TestClient) -> No
     assert response.status_code == 200
     assert "event: run_finished" in response.text
     assert len(client.messages.records) == 2  # type: ignore[attr-defined]
+
+
+# -- durable Idempotency-Key retry contract ---------------------------------
+
+
+def test_send_message_requires_idempotency_key(client: TestClient) -> None:
+    headers = _headers()
+    headers.pop("Idempotency-Key")
+    result = client.post(
+        f"/chat/conversations/{CONVERSATION_ID}/messages",
+        headers=headers,
+        json={"message": "warranty?", "retriever_profile_id": PROFILE_ID},
+    )
+    assert result.status_code == 422
+    assert client.retrieval.calls == []  # type: ignore[attr-defined]
+
+
+def test_completed_idempotent_retry_never_regenerates_or_writes(client: TestClient) -> None:
+    headers = _headers()
+    data = {"message": "warranty?", "retriever_profile_id": PROFILE_ID}
+    path = f"/chat/conversations/{CONVERSATION_ID}/messages"
+    original = client.post(path, headers=headers, json=data)
+    assert original.status_code == 200
+    run_id = original.headers["X-Run-ID"]
+    counts = (
+        len(client.messages.appended),  # type: ignore[attr-defined]
+        len(client.tasks.enqueued),  # type: ignore[attr-defined]
+        len(client.retrieval.calls),  # type: ignore[attr-defined]
+    )
+    again = client.post(path, headers=headers, json=data)
+    assert again.status_code == 200
+    assert again.headers["X-Run-ID"] == run_id
+    assert again.json() == {
+        "run_id": run_id,
+        "status": "completed",
+        "events_url": f"/chat/conversations/{CONVERSATION_ID}/runs/{run_id}/events",
+    }
+    assert counts == (
+        len(client.messages.appended),  # type: ignore[attr-defined]
+        len(client.tasks.enqueued),  # type: ignore[attr-defined]
+        len(client.retrieval.calls),  # type: ignore[attr-defined]
+    )
+
+
+def test_reused_idempotency_key_with_different_request_fails(
+    client: TestClient,
+) -> None:
+    headers = _headers()
+    path = f"/chat/conversations/{CONVERSATION_ID}/messages"
+    data = {"message": "warranty?", "retriever_profile_id": PROFILE_ID}
+    original = client.post(path, headers=headers, json=data)
+    assert original.status_code == 200
+    replay = client.post(
+        path, headers=headers,
+        json={"message": "different question", "retriever_profile_id": PROFILE_ID},
+    )
+    assert replay.status_code == 409
+    assert len(client.retrieval.calls) == 1  # type: ignore[attr-defined]
+
+
+def test_pending_idempotent_claim_returns_original_run_without_generation(
+    client: TestClient,
+) -> None:
+    headers = _headers()
+    key = (
+        UUID(TENANT_ID), USER_ID, UUID(CONVERSATION_ID),
+        headers["Idempotency-Key"],
+    )
+    original = SimpleNamespace(id=uuid4(), status="claimed", request_digest="")
+    # Ensure digest matches the server's canonical payload, with defaults.
+    data = {"message": "warranty?", "retriever_profile_id": PROFILE_ID}
+    payload = chat_route.SendMessageRequest.model_validate(data)
+    digest = hashlib.sha256(
+        json.dumps(
+            payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+    original.request_digest = digest
+    client.claims.claims[key] = original  # type: ignore[attr-defined]
+    response = client.post(
+        f"/chat/conversations/{CONVERSATION_ID}/messages", headers=headers, json=data
+    )
+    assert response.status_code == 202
+    assert response.json()["run_id"] == str(original.id)
+    assert len(client.retrieval.calls) == 0  # type: ignore[attr-defined]

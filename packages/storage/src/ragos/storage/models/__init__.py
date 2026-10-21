@@ -1,4 +1,5 @@
 from ragos.storage.models.app import (
+    ChatRequest,
     ChunkManifest,
     Conversation,
     DocumentRecord,
@@ -33,6 +34,7 @@ from ragos.storage.models.base import RagosModel
 from ragos.storage.models.search import SearchChunkHot, SearchChunkStable, SearchMemory
 
 __all__ = [
+    "ChatRequest",
     "ChunkManifest",
     "RetrieverProfileVersion",
     "EvalCase",

@@ -36,6 +36,7 @@ jobs:
           infra/migrations/versions/0010_immutable_evidence_lineage.py
           infra/migrations/versions/0011_index_reconciliation.py
           infra/migrations/versions/0012_task_execution_lifecycle.py
+          infra/migrations/versions/0013_chat_request_claims.py
       - name: Offline contract regressions (no PG/Qdrant)
         run: >-
           .venv/bin/pytest -q

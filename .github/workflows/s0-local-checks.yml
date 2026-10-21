@@ -74,7 +74,7 @@ jobs:
               raise SystemExit("Qdrant did not become ready")
           PY
       - run: uv sync --frozen --no-editable --extra dev --python 3.12
-      - run: .venv/bin/ruff check apps packages tests scripts infra/migrations/env.py infra/migrations/versions/0009_fail_closed_rls.py infra/migrations/versions/0010_immutable_evidence_lineage.py infra/migrations/versions/0011_index_reconciliation.py infra/migrations/versions/0012_task_execution_lifecycle.py
+      - run: .venv/bin/ruff check apps packages tests scripts infra/migrations/env.py infra/migrations/versions/0009_fail_closed_rls.py infra/migrations/versions/0010_immutable_evidence_lineage.py infra/migrations/versions/0011_index_reconciliation.py infra/migrations/versions/0012_task_execution_lifecycle.py infra/migrations/versions/0013_chat_request_claims.py
       - run: .venv/bin/alembic upgrade head
       - run: .venv/bin/pytest -q
       - run: .venv/bin/python scripts/verify_s0_processes.py
