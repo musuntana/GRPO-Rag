@@ -14,13 +14,15 @@
 | 模型 | OpenAI 兼容 Chat/Embedding 请求与响应解析、按需本机探测；冻结模型版号/向量维度 | 密钥可信解析、预算计量、生产租户 Provider admission；本机真实 Qwen 验收 |
 | 评估 | 页级去重、MRR@10/NDCG/Hit@6 口径、冻结 JSONL 离线报告与合成测试 | 带人工标注且审计的数据集上的真实 Recall/Hit/NDCG；语义引证一致性 |
 | 训练 | SFT 样本准备及 GRPO reward/排序辅助函数 | 真实 SFT/GRPO/LoRA 梯度更新、checkpoint、模型效果对照 |
-| 用户体验 | 已合并 PR #12：聊天消息、SSE 日志使用同一个 run_id；已完成运行可在用户/会话授权后 GET 重放，POST 携带 Last-Event-ID 会被拒绝；其余后端测试契约 | 生产签名鉴权/成员授权、可用 Web UI、运行中跨进程 SSE 续传、无游标 POST 重试幂等 |
+| 用户体验 | PR #12–#14：聊天 SSE 统一 run_id、已完成运行授权 GET 回放、SQL 提交先于终态 SSE、POST 同键持久幂等（迁移 0013） | 生产签名鉴权/成员授权、可用 Web UI、运行中跨进程 SSE 续传、丢失生产者后的安全恢复与真实计费核验 |
 
 **结论：S0 本地工程基线已通过；S1 是可测试的纵向工程切片，但没有达到真实企业 RAG 用户旅程的退出标准。**
 
 > **2026-10-21 增量（PR #12 已合并）**：聊天断线重连不再通过重新 POST 调用模型；现在有完成运行的会话授权 GET SSE 回放。该修复在 PR 分支的 [完整 CI #39593995266](https://github.com/musuntana/GRPO-Rag/actions/runs/39593995266) 上验证了 **946 passed**，且恢复了手动 CI 触发器；**未宣称此后 main 被自动重新测过**。完整流式在途恢复、持久请求幂等和 SQL 最终提交先于 run_finished 的时序问题仍待修复。
 
 > **2026-10-21 增量（PR #13 已合并）**：`ChatService` 现在使用显式持久化回调，在 PostgreSQL 成功提交用户/助手消息、引用和记忆写回任务**之后**，才发布 `memory_writeback_scheduled` 与 `run_finished` SSE。对应开发分支 [CI #39595380720](https://github.com/musuntana/GRPO-Rag/actions/runs/39595380720) 检查 **949 passed**。终态事件现在不会先于 SQL 提交，但仍没有幂等请求唯一键、跨进程运行中恢复，也不能保证 SQL 与文件日志原子提交。合并后 main 未再运行完整 CI，以避免重复消耗额度。
+
+> **2026-10-21 增量（PR #14 已合并）**：聊天 POST 现在必须携带 `Idempotency-Key`，首次请求在 PostgreSQL 事务中先取得带唯一约束的持久运行声明再调用模型。同一租户/用户/会话/键并发请求最多有一个执行者；相同请求的重复提交直接返回原运行 ID 与状态，不会再次生成；同键不同请求返回冲突。数据库新增 `app.chat_request`（RLS、请求摘要、终态不可逆），所需 schema 版本升级为 **0013_chat_request_claims**，部署 API 前必须迁移。开发分支 [完整 CI #39600665111](https://github.com/musuntana/GRPO-Rag/actions/runs/39600665111) **956 passed**，包含真实 PostgreSQL 并发争用测试；其后仅恢复手动 CI 并合并，**没有声称最新 main 被再次全量验收**。这保证的是“同一个请求键不会重新启动模型”，不是跨进程任意重试 exactly-once：运行中崩溃会留下 claimed，未实现生产者恢复、事件日志原子提交或实际计费核验。
 
 ## 本轮治理内容
 
