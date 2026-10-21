@@ -7,7 +7,7 @@ It extends the pre-existing Postgres + in-memory Qdrant PDF tests.
 ## CI setup
 
 GitHub Actions starts disposable PostgreSQL 18 and Qdrant
-`qdrant/qdrant:v1.15.1-unprivileged` services. It explicitly verifies the
+`qdrant/qdrant:v1.19.1-unprivileged` services. It explicitly verifies the
 Qdrant HTTP health endpoint before executing tests. Only
 `RAGOS_TEST_QDRANT_URL=http://127.0.0.1:6333` authorizes the new Qdrant
 test; non-local/remote target values fail rather than being used for writes.
