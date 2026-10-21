@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -75,6 +75,9 @@ class ChatDependencies:
     retriever_profile_id: UUID
     window_n: int
     memory_profile_version: str
+    # Explicit transactional persistence boundary. A terminal SSE event must
+    # never claim success before SQL has committed the messages and task.
+    persist_turn: Callable[[], None]
     retriever_profile_version: int | None = None
 
 
@@ -196,6 +199,10 @@ class ChatService:
             window_n=self.deps.window_n,
             profile_version=self.deps.memory_profile_version,
         )
+        # Persist the assistant answer, citations and memory task atomically
+        # BEFORE acknowledging completion to the client. A failed commit
+        # leaves a partial, explicitly unfinished trace for investigation.
+        self.deps.persist_turn()
         await sink.emit(
             "memory_writeback_scheduled",
             {"task_id": str(task.id), "message_count": message_count},

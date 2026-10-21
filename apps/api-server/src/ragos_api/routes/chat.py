@@ -164,6 +164,7 @@ def _service(
             retriever_profile_id=payload.retriever_profile_id,
             window_n=memory_profile.window_n,
             memory_profile_version=f"mpv-{memory_profile.version}",
+            persist_turn=session.commit,
             retriever_profile_version=payload.retriever_profile_version,
         ),
     )
@@ -225,7 +226,6 @@ async def send_message(
             await service.run_turn(
                 conversation_id=conversation_id, user_message=payload.message, run_id=run_id
             )
-            session.commit()
         except Exception:
             session.rollback()
             await service.deps.sink.close()

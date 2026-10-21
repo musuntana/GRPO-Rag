@@ -191,6 +191,7 @@ def _service(tmp_path, *, result=None, facts=None, user_id=USER_ID):
             retriever_profile_id=uuid4(),
             window_n=6,
             memory_profile_version="mpv-1",
+            persist_turn=lambda: None,
         ),
     )
     return service, retrieval, memory, messages, tasks
@@ -426,3 +427,49 @@ def test_mismatched_explicit_run_id_rejected_before_any_side_effect(tmp_path) ->
     assert retrieval.calls == []
     assert messages.appended == []
     assert service.deps.sink.emitted() == []
+
+
+# -- transactional finality -------------------------------------------------
+
+
+def test_sql_commit_precedes_every_terminal_completion_event(tmp_path) -> None:
+    service, _retrieval, _memory, messages, tasks = _service(tmp_path)
+    checks: list[str] = []
+
+    def commit_messages_and_task() -> None:
+        assert [item["role"] for item in messages.appended] == ["user", "assistant"]
+        assert len(tasks.enqueued) == 1
+        assert not any(
+            event.event == "run_finished" for event in service.deps.sink.emitted()
+        )
+        assert not any(
+            event.event == "memory_writeback_scheduled"
+            for event in service.deps.sink.emitted()
+        )
+        checks.append("database committed")
+
+    service.deps.persist_turn = commit_messages_and_task
+    events = _run(service)
+    assert checks == ["database committed"]
+    assert events[-1].event == "run_finished"
+    assert events[-2].event == "memory_writeback_scheduled"
+
+
+def test_failed_sql_commit_never_publishes_run_finished(tmp_path) -> None:
+    service, *_ = _service(tmp_path)
+
+    def failure() -> None:
+        raise RuntimeError("synthetic SQL commit refused")
+
+    service.deps.persist_turn = failure
+    async def scenario() -> None:
+        await service.run_turn(
+            conversation_id=CONVERSATION_ID, user_message="what was revenue?"
+        )
+
+    with pytest.raises(RuntimeError, match="synthetic SQL commit refused"):
+        asyncio.run(scenario())
+    names = [event.event for event in service.deps.sink.emitted()]
+    assert "run_finished" not in names
+    assert "memory_writeback_scheduled" not in names
+    assert "citation_linked" in names
