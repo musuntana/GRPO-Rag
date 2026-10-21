@@ -1,6 +1,6 @@
 # 当前工程基线（唯一实时状态入口）
 
-**核对日期：2026-10-21。** 仓库：`musuntana/GRPO-Rag`；主线在本次治理分支创建时为 `b321d9a6d574dd1d5b96b47fb9eeba361cc2bea5`（PR #9 已合并）；**主线最近一次完整 CI**：[932 passed / Ruff / Alembic / PG+Qdrant](https://github.com/musuntana/GRPO-Rag/actions/runs/39585791768)。后续主线 SHA 和运行数应以 GitHub 当前 `main` / Actions 为准，不把本快照冒充实时结果。
+**核对日期：2026-10-21。** 仓库：`musuntana/GRPO-Rag`；最新已核对主线为 `4e4bb1dc3136958eec48618f8cb1a0779544e51c`（PR #10 与 #11 已合并）。**最近两次相关完整 CI**：治理改动 [935 passed / Ruff / Alembic / PG+Qdrant](https://github.com/musuntana/GRPO-Rag/actions/runs/39590073676)；PR #10 的最终开发分支 [935 passed](https://github.com/musuntana/GRPO-Rag/actions/runs/39587738803)。**两者合并后的新 main 尚未另行执行完整 CI**：只有人工选择后才会运行，不把不同提交的通过结果当成同一个集成结果。后续事实以 GitHub 当前 `main` / Actions 为准。
 
 这是**主线和当前能力的汇总**，与某一次本地运行日志不同。历史实验日志仍保留在 `docs/validation/`；旧 `docs/project-progress.md` 是按时间记录的 S0 审计，不再作为“最新”来源。
 
@@ -22,12 +22,12 @@
 
 - `push` 与 `pull_request` 在旧 workflow 同时触发完整 CI，容易为一次代码修改重复记账。统一改为 **手动 `workflow_dispatch`**：`Quick checks (manual)` 和 `Full integration (manual)`。不满足自动强制合并门槛时，由 reviewer 核对 **最新 HEAD 与手动 CI 结果一致**，不可盲信旧 run；团队如需 required status checks 应单独调整 GitHub 分支保护。
 - `FrozenEmbeddingSpec.version` 把 **向量维度** 也纳入 Qdrant 物理空间身份，防止相同模型名称/权重标识但尺寸不同的向量共用旧索引。这是身份版本迁移：开发环境的旧集合保留，只能影子重建/对账，**禁止原地混写或删生产数据**。
-- 旧分支已按 GitHub `compare main...head` 检查。9 条历史 `feat/*` / `fix/*` / `test/*` 分支 `ahead_by=0`、对应 PR 已合并；正在开发的 `feat/s1-authorized-page-ranking-capture` 对 main ahead=4（PR #10 开放），不得清理。仅提供手动 `Prune merged branches`，默认 dry-run、需要显式确认才能执行删除；**仅部署清理入口不等于远程旧分支已删除**。
+- 旧分支曾按 GitHub `compare main...head` 检查，9 条历史 `feat/*` / `fix/*` / `test/*` 分支 `ahead_by=0`，相关 PR 均已合并。最新分支搜索仅返回 `main`、`chore/ci-on-demand-and-baseline-hygiene`、`feat/s1-authorized-page-ranking-capture` 这 3 条；PR #10 和 PR #11 均已 merged，因此这两条也是候选，但脚本目前只自动识别 `feat/` / `fix/` / `test/` 前缀，`chore/` 仍需在 GitHub 分支页面手动删除。当前只部署了默认 dry-run 的 `Prune merged branches` 入口，**不宣称是本次操作删除了远程历史分支**。
 
 ## 唯一后续技术优先级
 
 1. 经过权限、凭据/预算约束，实际运行一次真实 Qwen Embedding / Chat，并冻结模型 ID、权重身份和向量维度。
-2. 从已发布的 PostgreSQL + Qdrant 检索真实人工审查页级 Gold，收集 **真实** dev/holdout traces。PR #10 的采集改动以实际合并状态为准。
+2. 从已发布的 PostgreSQL + Qdrant 检索真实人工审查页级 Gold，收集 **真实** dev/holdout traces。PR #10 的可信检索结果 JSONL 采集逻辑已并入主线，但目前只有合成模型接口的集成测试证据。
 3. 同数据集比较 Dense 基线与成熟现成 Reranker；GRPO 仅在有稳定可归因的错误模式且收益证据时实现。
 4. 优先完成最小鉴权、上传/检索/引用用户旅程，不再增加未经实测的占位模块。
 
