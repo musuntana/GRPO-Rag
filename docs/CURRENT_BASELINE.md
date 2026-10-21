@@ -10,7 +10,7 @@
 |---|---|---|
 | 文档来源 | 文本型 PDF 字节经 Poppler 逐页提取；PageChunker、跨度/不可变版本契约 | 扫描件 OCR、复杂版面保真、生产隔离的任意文件上传 |
 | 索引 | PostgreSQL 冻结表示与索引计划、任务租约/CAS 发布、Qdrant 读回对账 | 持久 Qdrant **服务器重启**与备份恢复、企业正式上传 |
-| 检索 | Qdrant HTTP 客户端重连、租户范围过滤、PG 已发布原文回填、来源身份不一致拒绝 | 真实模型/授权生产网关下的完整用户问答；全量跨文档语义效果 |
+| 检索 | Qdrant HTTP 重连、租户过滤、PG 激活/对账证据回填及源身份核验；PR #19 在开发环境接通本地 ModelRouter Embedding Dense 查询，并加入 SQL 冻结索引版本过滤 | 实际 Qwen 权重的全文索引重建、生产授权/计量网关、真实用户问答与跨文档语义评估 |
 | 模型 | OpenAI 兼容 Chat/Embedding、本机真实 PDF 验收 CLI、冻结向量维度；PR #18 增加仅在显式开启且 API 绑定回环地址时可用的租户绑定本地 Chat/Embedding ModelRouter | 真实 Qwen 权重及效果未在 CI 验收；生产密钥可信解析、预算计量与授权 Provider 准入、真实 Dense–PG 证据全链路 |
 | 评估 | 页级去重、MRR@10/NDCG/Hit@6 口径、冻结 JSONL 离线报告与合成测试 | 带人工标注且审计的数据集上的真实 Recall/Hit/NDCG；语义引证一致性 |
 | 训练 | SFT 样本准备及 GRPO reward/排序辅助函数 | 真实 SFT/GRPO/LoRA 梯度更新、checkpoint、模型效果对照 |
@@ -29,6 +29,8 @@
 > **2026-10-21 增量（PR #16 已合并）**：加入可在本机执行的 `scripts/check_local_pdf_rag.py`，使用真实的合成 PDF 字节与 Poppler、显式指定的 Qwen Chat/Embedding OpenAI 兼容接口、Qdrant 检索及结构化引用核验，输出不含原文或模型答案的 JSON 验收报告。开发分支 [完整 CI #39609139927](https://github.com/musuntana/GRPO-Rag/actions/runs/39609139927) **971 passed**，Ruff / Alembic 通过，测试使用的是合成模型响应而非真实 Qwen 权重；Qdrant HTTP 和 PDF 解析是实际服务/解析器。CI 触发规则已恢复为仅手动，**最新 main 没有再跑全套**。实际 Qwen 模型、官方模型权重版本/维度、真实 API 响应仍需操作员在 Mac 上运行脚本并保存测试报告；这不是企业正式 ModelRouter、已发布 PostgreSQL 文档、真实评估集或 GRPO 训练。
 
 > **2026-10-21 增量（PR #18 已合并，取代未合并的 #17）**：在已有 `ModelRouter` 内加入关闭为默认值的本机 `local_openai` Chat/Embedding 适配：只允许明确配置的开发环境、回环绑定 API、本机模型端点、平台 Provider UUID、租户 use-case 绑定与精确模型名，拒绝未经批准的模型和 URL；不会将数据库 `KeyPool.api_key_encrypted` 当作 API Key 外发。Chat 限制 max_tokens、输入量，Embedding 校验维度、有限数值和非零向量。开发分支 [完整 CI #39623355538](https://github.com/musuntana/GRPO-Rag/actions/runs/39623355538) **985 passed**，Ruff/Alembic 通过。GitHub 前一个 PR #17 的 head 快照一度滞后于安全恢复的手动 CI 提交，因此关闭 #17、重新从同一最终分支建立 #18 后核对无工作流差异再合并。**仅开发网关部分可用；正式 Dense 检索尚未连接 Qwen 已冻结向量与已发布 PG 索引，真实权重、生产鉴权及预算未验证。** 使用说明见 [S1 开发本机网关验收文档](validation/s1-dev-local-model-router-2026-10-21.md)。
+
+> **2026-10-21 增量（PR #19 已合并）**：正式检索构造器在明确的开发环境/本地 ModelRouter 准入下，支持将冻结身份的 Qwen Embedding 查询向量送入 Qdrant Dense Recall；结果继续通过 PostgreSQL `active_index_id`、`indexed`、PG/向量 digest 对账及不可变源身份校验，**新增与查询模型完全匹配的 `ChunkManifest.embedding_profile` 和 `embedding_version` 回填条件**。开发分支功能代码在 [CI #39626426003](https://github.com/musuntana/GRPO-Rag/actions/runs/39626426003) 验证 **987 passed**、Ruff/Alembic 通过。采用独立一次性 CI 分支，之后强制恢复该分支到仅手动工作流，PR #19 本身不包含 CI 改动。该测试实际使用 PostgreSQL/Qdrant/Poppler，但 Embedding 响应为确定性模拟；未验证 Mac 上实际 Qwen 权重，也未实现通用企业 PDF 上传与真实向量重建。此轮无迁移，使用说明见 [S1 冻结 Dense/PG 对账](validation/s1-dev-frozen-dense-pg-recall-2026-10-21.md)。
 
 ## 本轮治理内容
 
