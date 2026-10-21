@@ -14,7 +14,7 @@ from ragos.retrieval.benchmark import compare_page_traces, main, mine_trace_pair
 def _rows(*, split: str = "dev") -> list[dict]:
     return [
         {
-            "type": "manifest", "schema_version": 1,
+            "type": "manifest", "schema_version": 2 if split == "train" else 1,
             "dataset_id": "synthetic-paired-v1",
             "tenant_id": str(uuid4()), "index_id": str(uuid4()),
             "split": split, "embedding_profile": "synthetic_only",
@@ -79,7 +79,7 @@ def test_comparison_refuses_identity_gold_or_candidate_change(edit) -> None:
 
 
 def test_mining_requires_graded_retrieved_negatives_and_recalled_positive() -> None:
-    result = mine_trace_pairs(_raw(_rows()))
+    result = mine_trace_pairs(_raw(_rows(split="train")))
     assert len(result["pairs"]) == 2
     assert [p["negative_grade"] for p in result["pairs"]] == [1, 0]
     assert result["pairs"][0]["negative_reason"] == "same_document_adjacent"
@@ -90,7 +90,7 @@ def test_mining_requires_graded_retrieved_negatives_and_recalled_positive() -> N
 
 
 def test_unrecalled_gold_positive_is_not_used_for_ranker_training() -> None:
-    rows = _rows()
+    rows = _rows(split="train")
     rows[1]["retrieved"] = rows[1]["retrieved"][:3]
     result = mine_trace_pairs(_raw(rows))
     assert result["pairs"] == []
@@ -98,17 +98,35 @@ def test_unrecalled_gold_positive_is_not_used_for_ranker_training() -> None:
 
 
 def test_holdout_cannot_be_mined_and_caps_are_checked() -> None:
-    with pytest.raises(ValueError, match="holdout"):
+    with pytest.raises(ValueError, match="train-v2"):
         mine_trace_pairs(_raw(_rows(split="holdout")))
+    with pytest.raises(ValueError, match="train-v2"):
+        mine_trace_pairs(_raw(_rows(split="dev")))
     with pytest.raises(ValueError, match="invalid hard-negative"):
-        mine_trace_pairs(_raw(_rows()), window=51)
+        mine_trace_pairs(_raw(_rows(split="train")), window=51)
 
 
 def test_cli_writes_private_non_overwriting_json(tmp_path: Path) -> None:
     source = tmp_path / "dev.jsonl"
     output = tmp_path / "pairs.json"
-    source.write_bytes(_raw(_rows()))
+    source.write_bytes(_raw(_rows(split="train")))
     assert main(["mine", str(source), "--output", str(output)]) == 0
     assert len(json.loads(output.read_text())["pairs"]) == 2
     assert output.stat().st_mode & 0o777 == 0o600
     assert main(["mine", str(source), "--output", str(output)]) == 2
+
+
+def test_train_v2_is_separate_from_dev_holdout_v1() -> None:
+    from ragos.retrieval.offline_eval import evaluate_trace_bytes
+
+    train = _rows(split="train")
+    report = evaluate_trace_bytes(_raw(train))
+    assert report["trace_format"] == "page-ranking-trace-train-v2"
+    assert report["split"] == "train"
+    train[0]["schema_version"] = 1
+    with pytest.raises(ValueError, match="v1"):
+        evaluate_trace_bytes(_raw(train))
+    holdout = _rows(split="holdout")
+    holdout[0]["schema_version"] = 2
+    with pytest.raises(ValueError, match="v2"):
+        evaluate_trace_bytes(_raw(holdout))
