@@ -148,6 +148,7 @@ async def capture_page_ranking_trace(
         "retriever_version": retriever_version,
     }
     lines = [_json_line(manifest)]
+    encoded_size = len(lines[0].encode("utf-8")) + 1
     for case in cases:
         # NEVER pass gold pages or the whole EvalCase into a retriever.
         hits = await dense.recall(case.question, tenant_ctx, profile)
@@ -171,7 +172,8 @@ async def capture_page_ranking_trace(
                 }
             )
         )
-        if sum(len(line.encode("utf-8")) + 1 for line in lines) > MAX_TRACE_BYTES:
+        encoded_size += len(lines[-1].encode("utf-8")) + 1
+        if encoded_size > MAX_TRACE_BYTES:
             raise ValidationError("page trace exceeds frozen byte limit")
 
     raw = ("\n".join(lines) + "\n").encode("utf-8")
