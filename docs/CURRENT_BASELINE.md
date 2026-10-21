@@ -1,6 +1,6 @@
 # 当前工程基线（唯一实时状态入口）
 
-**核对日期：2026-10-21。** 仓库：`musuntana/GRPO-Rag`；最近的代码合并基线为 `4e4bb1dc3136958eec48618f8cb1a0779544e51c`（此后可能有纯文档提交）（PR #10 与 #11 已合并）。**最近两次相关完整 CI**：治理改动 [935 passed / Ruff / Alembic / PG+Qdrant](https://github.com/musuntana/GRPO-Rag/actions/runs/39590073676)；PR #10 的最终开发分支 [935 passed](https://github.com/musuntana/GRPO-Rag/actions/runs/39587738803)。**两者合并后的新 main 尚未另行执行完整 CI**：只有人工选择后才会运行，不把不同提交的通过结果当成同一个集成结果。后续事实以 GitHub 当前 `main` / Actions 为准。
+**核对日期：2026-10-21。** 仓库：`musuntana/GRPO-Rag`。本次确认的功能合并提交为 `c40d2983ae6518ef4f09e362a9a92fdfd9cca877`（PR #18；后续纯文档提交使 main SHA 继续变化）。最近相关完整回归：[PR #18 / 本地模型网关 985 passed，Ruff 与 Alembic 通过](https://github.com/musuntana/GRPO-Rag/actions/runs/39623355538)。验证在功能分支提交 `37e700f1` 上执行；合并前**仅恢复手动 CI 工作流配置**，没有修改通过测试的功能代码，合并后的 main 没有重复运行完整 CI。历史 S0–S1 运行可在 [Actions](https://github.com/musuntana/GRPO-Rag/actions) 核对，不把合成模型响应测试宣传为真实 Qwen 效果。
 
 这是**主线和当前能力的汇总**，与某一次本地运行日志不同。历史实验日志仍保留在 `docs/validation/`；旧 `docs/project-progress.md` 是按时间记录的 S0 审计，不再作为“最新”来源。
 
@@ -11,7 +11,7 @@
 | 文档来源 | 文本型 PDF 字节经 Poppler 逐页提取；PageChunker、跨度/不可变版本契约 | 扫描件 OCR、复杂版面保真、生产隔离的任意文件上传 |
 | 索引 | PostgreSQL 冻结表示与索引计划、任务租约/CAS 发布、Qdrant 读回对账 | 持久 Qdrant **服务器重启**与备份恢复、企业正式上传 |
 | 检索 | Qdrant HTTP 客户端重连、租户范围过滤、PG 已发布原文回填、来源身份不一致拒绝 | 真实模型/授权生产网关下的完整用户问答；全量跨文档语义效果 |
-| 模型 | OpenAI 兼容 Chat/Embedding 请求与响应解析、按需本机探测；冻结模型版号/向量维度 | 密钥可信解析、预算计量、生产租户 Provider admission；本机真实 Qwen 验收 |
+| 模型 | OpenAI 兼容 Chat/Embedding、本机真实 PDF 验收 CLI、冻结向量维度；PR #18 增加仅在显式开启且 API 绑定回环地址时可用的租户绑定本地 Chat/Embedding ModelRouter | 真实 Qwen 权重及效果未在 CI 验收；生产密钥可信解析、预算计量与授权 Provider 准入、真实 Dense–PG 证据全链路 |
 | 评估 | 页级去重、MRR@10/NDCG/Hit@6 口径、冻结 JSONL 离线报告与合成测试 | 带人工标注且审计的数据集上的真实 Recall/Hit/NDCG；语义引证一致性 |
 | 训练 | SFT 样本准备及 GRPO reward/排序辅助函数 | 真实 SFT/GRPO/LoRA 梯度更新、checkpoint、模型效果对照 |
 | 用户体验 | PR #12–#14：聊天 SSE 统一 run_id、已完成运行授权 GET 回放、SQL 提交先于终态 SSE、POST 同键持久幂等（迁移 0013） | 生产签名鉴权/成员授权、可用 Web UI、运行中跨进程 SSE 续传、丢失生产者后的安全恢复与真实计费核验 |
@@ -27,6 +27,8 @@
 > **2026-10-21 增量（PR #15 已合并）**：新增读取 PostgreSQL `chat_request` 的用户/会话隔离运行状态 API `GET /chat/conversations/{conversation_id}/runs/{run_id}`。运行中状态只提示轮询或人工排查（10 分钟阈值不构成租约失效证明），已提交的回答必须通过 SQL 助手消息与完整连续 SSE 日志双重验证才能标记为可回放；失败、事件丢失或损坏均不自动再次调用模型。开发分支 [完整 CI #39602526009](https://github.com/musuntana/GRPO-Rag/actions/runs/39602526009) **964 passed**，Ruff 和 Alembic 通过；CI 临时 push 触发随后恢复为仅手动，合并后的 main 没有再次运行完整套件。仍待解决心跳/任务租约、真正安全的人工对账修复、分布式在途 SSE 恢复及真实模型计费核验。
 
 > **2026-10-21 增量（PR #16 已合并）**：加入可在本机执行的 `scripts/check_local_pdf_rag.py`，使用真实的合成 PDF 字节与 Poppler、显式指定的 Qwen Chat/Embedding OpenAI 兼容接口、Qdrant 检索及结构化引用核验，输出不含原文或模型答案的 JSON 验收报告。开发分支 [完整 CI #39609139927](https://github.com/musuntana/GRPO-Rag/actions/runs/39609139927) **971 passed**，Ruff / Alembic 通过，测试使用的是合成模型响应而非真实 Qwen 权重；Qdrant HTTP 和 PDF 解析是实际服务/解析器。CI 触发规则已恢复为仅手动，**最新 main 没有再跑全套**。实际 Qwen 模型、官方模型权重版本/维度、真实 API 响应仍需操作员在 Mac 上运行脚本并保存测试报告；这不是企业正式 ModelRouter、已发布 PostgreSQL 文档、真实评估集或 GRPO 训练。
+
+> **2026-10-21 增量（PR #18 已合并，取代未合并的 #17）**：在已有 `ModelRouter` 内加入关闭为默认值的本机 `local_openai` Chat/Embedding 适配：只允许明确配置的开发环境、回环绑定 API、本机模型端点、平台 Provider UUID、租户 use-case 绑定与精确模型名，拒绝未经批准的模型和 URL；不会将数据库 `KeyPool.api_key_encrypted` 当作 API Key 外发。Chat 限制 max_tokens、输入量，Embedding 校验维度、有限数值和非零向量。开发分支 [完整 CI #39623355538](https://github.com/musuntana/GRPO-Rag/actions/runs/39623355538) **985 passed**，Ruff/Alembic 通过。GitHub 前一个 PR #17 的 head 快照一度滞后于安全恢复的手动 CI 提交，因此关闭 #17、重新从同一最终分支建立 #18 后核对无工作流差异再合并。**仅开发网关部分可用；正式 Dense 检索尚未连接 Qwen 已冻结向量与已发布 PG 索引，真实权重、生产鉴权及预算未验证。** 使用说明见 [S1 开发本机网关验收文档](validation/s1-dev-local-model-router-2026-10-21.md)。
 
 ## 本轮治理内容
 
