@@ -116,7 +116,12 @@ def mine_case(
         for candidate in related:
             if related_taken >= config.max_related_per_positive:
                 break
-            if str(candidate.doc_id) == str(positive.doc_id):
+            # Same PDF, different page is a crucial hard-negative category.
+            # Skip only the identical evidence unit, never the whole document.
+            if (
+                str(candidate.doc_id) == str(positive.doc_id)
+                and candidate.page_no == positive.page_no
+            ):
                 continue
             result.pairs.append(
                 MiningPair(

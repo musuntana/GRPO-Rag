@@ -8,9 +8,10 @@ priorities (ADR-0004's reasoning applied to training).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
+from ragos.core.errors import ValidationError
 from ragos.retrieval.training.mine import MiningPair, split_by_grade
 
 
@@ -28,6 +29,11 @@ class TrainingExample:
     negative_text: str
     negative_grade: int
     weight: float = 1.0
+    case_id: str | None = None
+    positive_doc_id: str | None = None
+    positive_page_no: int | None = None
+    negative_doc_id: str | None = None
+    negative_page_no: int | None = None
 
     def label(self) -> int:
         return 1 if self.weight >= 0.0 else 0
@@ -51,49 +57,72 @@ class SFTConfig:
             raise ValueError("related_weight must be positive")
 
 
+# A paginated corpus MUST use (document_id, page_no) as its text key.
+# Bare document-id keys are supported only for genuinely unpaged examples.
+TextLookup = Mapping[str | tuple[str, int | None], str]
+
+
+def _require_evidence_text(
+    lookup: TextLookup, doc_id: str, page_no: int | None, case_id: str
+) -> str:
+    text = lookup.get((doc_id, page_no))
+    if text is None and page_no is None:
+        text = lookup.get(doc_id)
+    if not isinstance(text, str) or not text.strip():
+        raise ValidationError(
+            "training evidence text missing for document/page",
+            case_id=case_id,
+            doc_id=doc_id,
+            page_no=page_no,
+        )
+    return text
+
+
 def build_examples(
     pairs: Sequence[MiningPair],
-    text_by_doc: dict[str, str],
+    text_by_doc: TextLookup,
     config: SFTConfig | None = None,
 ) -> list[TrainingExample]:
-    """Materialize mined pairs into weighted training examples.
+    """Build weighted preference pairs using exact evidence-page identity.
 
-    Grade 1 and grade 0 negatives are built into the same list but keep their
-    own weight and their own grade, so a report can always recover the mix.
+    Never substitute a PDF-wide text blob for a page: that silently teaches
+    the model identical text for positive and same-PDF hard-negative pages.
+    Missing text fails closed instead of silently shrinking the training set.
     """
     config = config or SFTConfig()
     config.validate()
-
     related, irrelevant = split_by_grade(list(pairs))
     examples: list[TrainingExample] = []
 
-    for pair in related:
-        pos = text_by_doc.get(pair.positive_doc_id)
-        neg = text_by_doc.get(pair.negative_doc_id)
-        if not pos or not neg:
-            continue
-        examples.append(
-            TrainingExample(
-                query=pair.question,
-                positive_text=pos,
-                negative_text=neg,
-                negative_grade=pair.negative_grade,
-                weight=config.related_weight,
-            )
+    for pair in [*related, *irrelevant]:
+        case_id = str(pair.case_id)
+        pos = _require_evidence_text(
+            text_by_doc, pair.positive_doc_id, pair.positive_page_no, case_id
         )
-
-    for pair in irrelevant:
-        pos = text_by_doc.get(pair.positive_doc_id)
-        neg = text_by_doc.get(pair.negative_doc_id)
-        if not pos or not neg:
-            continue
+        neg = _require_evidence_text(
+            text_by_doc, pair.negative_doc_id, pair.negative_page_no, case_id
+        )
+        if (
+            pair.positive_doc_id == pair.negative_doc_id
+            and pair.positive_page_no == pair.negative_page_no
+        ):
+            raise ValidationError("positive and negative evidence identity is identical")
         examples.append(
             TrainingExample(
                 query=pair.question,
                 positive_text=pos,
                 negative_text=neg,
                 negative_grade=pair.negative_grade,
-                weight=config.irrelevant_weight,
+                weight=(
+                    config.related_weight
+                    if pair.negative_grade == 1
+                    else config.irrelevant_weight
+                ),
+                case_id=case_id,
+                positive_doc_id=pair.positive_doc_id,
+                positive_page_no=pair.positive_page_no,
+                negative_doc_id=pair.negative_doc_id,
+                negative_page_no=pair.negative_page_no,
             )
         )
 
@@ -118,19 +147,41 @@ class TrainingRun:
 
 
 def dataset_digest(examples: Sequence[TrainingExample]) -> str:
-    import hashlib
+    """Stable hash of source identity, page text, labels and training weights.
 
+    Without page IDs two different PDF pages with identical text can produce
+    an identical digest; without weights different training mixes look equal.
+    """
+    import hashlib
+    import json
+
+    rows = [
+        json.dumps(
+            {
+                "case_id": example.case_id,
+                "query": example.query,
+                "positive": {
+                    "doc_id": example.positive_doc_id,
+                    "page_no": example.positive_page_no,
+                    "text": example.positive_text,
+                },
+                "negative": {
+                    "doc_id": example.negative_doc_id,
+                    "page_no": example.negative_page_no,
+                    "text": example.negative_text,
+                    "grade": example.negative_grade,
+                },
+                "weight": example.weight,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        for example in examples
+    ]
     h = hashlib.sha256()
-    for example in sorted(
-        examples, key=lambda e: (e.query, e.positive_text, e.negative_text)
-    ):
-        h.update(example.query.encode("utf-8"))
-        h.update(b"\x00")
-        h.update(example.positive_text.encode("utf-8"))
-        h.update(b"\x00")
-        h.update(example.negative_text.encode("utf-8"))
-        h.update(b"\x00")
-        h.update(str(example.negative_grade).encode("utf-8"))
+    for row in sorted(rows):
+        h.update(row.encode("utf-8"))
         h.update(b"\n")
     return h.hexdigest()[:32]
 
@@ -147,7 +198,7 @@ def summarize(examples: Sequence[TrainingExample]) -> dict[str, float | int]:
 
 def train(
     pairs: Sequence[MiningPair],
-    text_by_doc: dict[str, str],
+    text_by_doc: TextLookup,
     *,
     tenant_scope_key: str,
     config: SFTConfig | None = None,
