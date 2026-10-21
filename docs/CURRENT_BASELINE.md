@@ -24,6 +24,8 @@
 
 > **2026-10-21 增量（PR #14 已合并）**：聊天 POST 现在必须携带 `Idempotency-Key`，首次请求在 PostgreSQL 事务中先取得带唯一约束的持久运行声明再调用模型。同一租户/用户/会话/键并发请求最多有一个执行者；相同请求的重复提交直接返回原运行 ID 与状态，不会再次生成；同键不同请求返回冲突。数据库新增 `app.chat_request`（RLS、请求摘要、终态不可逆），所需 schema 版本升级为 **0013_chat_request_claims**，部署 API 前必须迁移。开发分支 [完整 CI #39600665111](https://github.com/musuntana/GRPO-Rag/actions/runs/39600665111) **956 passed**，包含真实 PostgreSQL 并发争用测试；其后仅恢复手动 CI 并合并，**没有声称最新 main 被再次全量验收**。这保证的是“同一个请求键不会重新启动模型”，不是跨进程任意重试 exactly-once：运行中崩溃会留下 claimed，未实现生产者恢复、事件日志原子提交或实际计费核验。
 
+> **2026-10-21 增量（PR #15 已合并）**：新增读取 PostgreSQL `chat_request` 的用户/会话隔离运行状态 API `GET /chat/conversations/{conversation_id}/runs/{run_id}`。运行中状态只提示轮询或人工排查（10 分钟阈值不构成租约失效证明），已提交的回答必须通过 SQL 助手消息与完整连续 SSE 日志双重验证才能标记为可回放；失败、事件丢失或损坏均不自动再次调用模型。开发分支 [完整 CI #39602526009](https://github.com/musuntana/GRPO-Rag/actions/runs/39602526009) **964 passed**，Ruff 和 Alembic 通过；CI 临时 push 触发随后恢复为仅手动，合并后的 main 没有再次运行完整套件。仍待解决心跳/任务租约、真正安全的人工对账修复、分布式在途 SSE 恢复及真实模型计费核验。
+
 ## 本轮治理内容
 
 - `push` 与 `pull_request` 在旧 workflow 同时触发完整 CI，容易为一次代码修改重复记账。统一改为 **手动 `workflow_dispatch`**：`Quick checks (manual)` 和 `Full integration (manual)`。不满足自动强制合并门槛时，由 reviewer 核对 **最新 HEAD 与手动 CI 结果一致**，不可盲信旧 run；团队如需 required status checks 应单独调整 GitHub 分支保护。
