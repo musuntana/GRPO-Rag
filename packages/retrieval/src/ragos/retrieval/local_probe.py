@@ -25,8 +25,8 @@ from ragos.retrieval.gateway import build_generation_messages
 from ragos.retrieval.identity import EvidenceIdentity
 from ragos.retrieval.metrics import Grade, hit_at_k
 from ragos.retrieval.parse.layout import LayoutElement, parse_pdf_pages
-from ragos.retrieval.parse.pdf_bytes import extract_pdf_bytes
 from ragos.retrieval.parse.page_chunker import ChunkerConfig, PageChunker
+from ragos.retrieval.parse.pdf_bytes import extract_pdf_bytes
 from ragos.retrieval.types import GoldEvidence, ScoredChunk
 from ragos.retrieval.verify import verify_structural_batch
 from ragos.storage.repositories.search import SearchChunkUpsert, SearchTier
