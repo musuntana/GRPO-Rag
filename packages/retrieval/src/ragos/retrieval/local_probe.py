@@ -25,6 +25,7 @@ from ragos.retrieval.gateway import build_generation_messages
 from ragos.retrieval.identity import EvidenceIdentity
 from ragos.retrieval.metrics import Grade, hit_at_k
 from ragos.retrieval.parse.layout import LayoutElement, parse_pdf_pages
+from ragos.retrieval.parse.pdf_bytes import extract_pdf_bytes
 from ragos.retrieval.parse.page_chunker import ChunkerConfig, PageChunker
 from ragos.retrieval.types import GoldEvidence, ScoredChunk
 from ragos.retrieval.verify import verify_structural_batch
@@ -70,7 +71,10 @@ def _context() -> TenantContext:
 
 
 def _chunks(
-    *, embedding_version: str = EMBEDDING_VERSION, page_texts: list[str] | None = None
+    *,
+    embedding_version: str = EMBEDDING_VERSION,
+    page_texts: list[str] | None = None,
+    pdf_bytes: bytes | None = None,
 ) -> list[SearchChunkUpsert]:
     """Prepare real page-chunker output from already-extracted synthetic PDF text.
 
@@ -80,12 +84,17 @@ def _chunks(
     """
     if not embedding_version.strip() or embedding_version == "hash-test":
         raise ValidationError("probe requires a frozen non-test embedding version")
-    texts = [text for _, text in PAGES] if page_texts is None else page_texts
-    parsed = parse_pdf_pages(
-        [[LayoutElement(element_type="text", text=text, order=0)] for text in texts],
-        parser_version="synthetic-pdf-elements-v1",
-        title="Synthetic service contract",
-    )
+    if pdf_bytes is not None and page_texts is not None:
+        raise ValidationError("choose either PDF bytes or already extracted page text")
+    if pdf_bytes is not None:
+        parsed = extract_pdf_bytes(pdf_bytes, title="Synthetic PDF integration fixture")
+    else:
+        texts = [text for _, text in PAGES] if page_texts is None else page_texts
+        parsed = parse_pdf_pages(
+            [[LayoutElement(element_type="text", text=text, order=0)] for text in texts],
+            parser_version="synthetic-pdf-elements-v1",
+            title="Synthetic service contract",
+        )
     if not parsed.pages or any(page.is_empty() for page in parsed.pages):
         raise ValidationError("cannot index an empty PDF page in the local probe")
     chunker = PageChunker(
@@ -103,10 +112,17 @@ def _chunks(
         },
         ensure_ascii=False, sort_keys=True, separators=(",", ":"),
     ).encode("utf-8")
-    source_digest = hashlib.sha256(source_bytes).hexdigest()
+    source_digest = (
+        parsed.metadata["pdf_sha256"]
+        if pdf_bytes is not None
+        else hashlib.sha256(source_bytes).hexdigest()
+    )
     doc_version = uuid5(DOC, f"source:{source_digest}")
+    extracted_text_digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
     representation = uuid5(
-        doc_version, f"parser:{parsed.parser_version};chunker:{chunker.config.version_id()}"
+        doc_version,
+        f"parser:{parsed.parser_version};chunker:{chunker.config.version_id()};"
+        f"extracted_text:{extracted_text_digest}",
     )
     index = uuid5(representation, f"embedding:{embedding_version}")
     node_ids = {
@@ -204,6 +220,7 @@ def run_probe(
     chat_model: str,
     embedding_version: str,
     client: QdrantClient | None = None,
+    pdf_bytes: bytes | None = None,
 ) -> ProbeResult:
     """Execute the synthetic evidence path without durable tenant state."""
     if not embedding_model or not chat_model or not embedding_version:
@@ -214,7 +231,7 @@ def run_probe(
     vector_client = client or QdrantClient(":memory:")
     try:
         ctx = _context()
-        chunks = _chunks(embedding_version=embedding_version)
+        chunks = _chunks(embedding_version=embedding_version, pdf_bytes=pdf_bytes)
 
         def embed_one(text: str) -> list[float]:
             result = provider.embed(texts=[text], model=embedding_model)
