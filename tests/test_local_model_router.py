@@ -7,19 +7,30 @@ deliberately attached *after* a tenant-bound model profile is resolved.
 from __future__ import annotations
 
 from dataclasses import replace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from ragos.core.config import Settings
 from ragos.core.errors import ProviderError, ValidationError
-from ragos.model_gateway.local_admission import (
-    LocalModelAdmission,
-    LocalPinnedProvider,
-    local_admission_from_settings,
-)
+from ragos.core.tenant import ActorType, TenantContext
+from ragos.model_gateway import local_admission
 from ragos.model_gateway.router import ModelRouter
 from ragos.storage.models.app import ModelProfile, Provider
-from test_model_gateway import TENANT_ID, _FakeSession, _ctx
+
+TENANT_ID = UUID("fa9d4df0-81ce-4f1a-9820-4c29259779a6")
+
+
+class _FakeSession:
+    pass
+
+
+def _ctx() -> TenantContext:
+    return TenantContext(
+        tenant_id=TENANT_ID, tenant_slug="acme",
+        actor_id="u1", actor_type=ActorType.TENANT_ADMIN,
+        roles=["tenant_admin"], trace_id="t-1",
+    )
+
 
 BASE = "http://127.0.0.1:12434/engines/v1"
 CHAT = "ai/qwen3:4b-instruct"
@@ -48,8 +59,8 @@ class LocalWire:
         raise AssertionError("Unexpected provider route")
 
 
-def _admission(*, wire=None) -> LocalModelAdmission:
-    return LocalModelAdmission(
+def _admission(*, wire=None) -> local_admission.LocalModelAdmission:
+    return local_admission.LocalModelAdmission(
         provider_id=uuid4(), base_url=BASE,
         chat_model=CHAT, embedding_model=EMBED,
         embedding_dimension=3, transport=wire,
@@ -90,7 +101,7 @@ def test_local_gateway_disabled_by_default_and_rejected_outside_dev() -> None:
         _env_file=None, app_env="dev",
         local_model_enabled=False, local_model_provider_id=None,
     )
-    assert local_admission_from_settings(disabled) is None
+    assert local_admission.local_admission_from_settings(disabled) is None
     for app_env in ("test", "staging", "prod"):
         bad = Settings(
             _env_file=None, app_env=app_env, local_model_enabled=True,
@@ -99,7 +110,7 @@ def test_local_gateway_disabled_by_default_and_rejected_outside_dev() -> None:
             local_model_embed_dimension=3,
         )
         with pytest.raises(ValidationError, match="development"):
-            local_admission_from_settings(bad)
+            local_admission.local_admission_from_settings(bad)
 
 
 def test_explicit_dev_config_requires_pins() -> None:
@@ -111,14 +122,14 @@ def test_explicit_dev_config_requires_pins() -> None:
         local_model_chat=CHAT, local_model_embed=EMBED,
         local_model_embed_dimension=3,
     )
-    c = local_admission_from_settings(settings)
+    c = local_admission.local_admission_from_settings(settings)
     assert c is not None
     assert c.embedding_dimension == 3
     assert c.model_for("chat") == CHAT
     assert c.model_for("embed") == EMBED
     settings.api_host = "0.0.0.0"
     with pytest.raises(ValidationError, match="loopback"):
-        local_admission_from_settings(settings)
+        local_admission.local_admission_from_settings(settings)
     with pytest.raises(ProviderError):
         c.model_for("rerank")
 
@@ -186,7 +197,7 @@ def test_wrong_model_or_platform_provider_denied_without_http_or_key(monkeypatch
 
 
 def test_local_provider_rejects_unbounded_inputs_and_reranking() -> None:
-    model = LocalPinnedProvider(_admission(wire=LocalWire()))
+    model = local_admission.LocalPinnedProvider(_admission(wire=LocalWire()))
     with pytest.raises(ValidationError, match="max_tokens"):
         model.chat(
             model=CHAT, messages=[{"role": "user", "content": "hello"}],
