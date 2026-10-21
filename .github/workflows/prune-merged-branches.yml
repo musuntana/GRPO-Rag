@@ -1,0 +1,41 @@
+name: Prune merged branches (manual)
+# Never runs on push/PR; requires explicit opt-in for deletes.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Clean already merged and fully contained branch refs?
+        required: true
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - delete-merged
+      confirm_repo:
+        description: Type musuntana/GRPO-Rag to confirm deletion
+        required: false
+        type: string
+permissions:
+  contents: write
+  pull-requests: read
+concurrency:
+  group: branch-prune-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Review or delete eligible branch refs
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRM_REPO: ${{ inputs.confirm_repo }}
+        run: |
+          if [ "$MODE" = "delete-merged" ]; then
+            python scripts/cleanup_merged_branches.py --repo "$GITHUB_REPOSITORY" --apply --confirm-repo "$CONFIRM_REPO"
+          else
+            python scripts/cleanup_merged_branches.py --repo "$GITHUB_REPOSITORY"
+          fi

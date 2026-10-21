@@ -58,7 +58,9 @@ class FrozenEmbeddingSpec:
         # Include the exact model request name as a fingerprint so two model
         # aliases with the same short revision cannot share a Qdrant namespace.
         name_digest = hashlib.sha256(self.model.encode("utf-8")).hexdigest()[:16]
-        return f"{name_digest}_{self.model_digest}"
+        # Vector dimensions are part of the physical embedding space.
+        # Never reuse a collection when the API changes vector size.
+        return f"{name_digest}_{self.model_digest}_{self.dimension}"
 
     def collection(self, *, tier: SearchTier = SearchTier.STABLE) -> str:
         return collection_name(

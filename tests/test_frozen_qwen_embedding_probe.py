@@ -88,6 +88,9 @@ def test_index_namespace_changes_with_real_model_identity() -> None:
     assert before.version != changed_model.version
     assert before.collection() != changed_model.collection()
     assert before.collection() != changed_revision.collection()
+    changed_dimension = replace(before, dimension=2)
+    assert before.version != changed_dimension.version
+    assert before.collection() != changed_dimension.collection()
     assert before.version == replace(before).version
 
 

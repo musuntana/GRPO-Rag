@@ -11,3 +11,15 @@ ragos.egg-info/
 
 # Standard wheel build output
 build/
+
+# Local throwaway outputs (existing tracked validation files stay tracked)
+.DS_Store
+.coverage
+coverage.xml
+htmlcov/
+*.sqlite
+*.sqlite3
+*.db
+*.log
+*.tmp
+*.bak

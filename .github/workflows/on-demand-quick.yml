@@ -1,0 +1,45 @@
+name: Quick checks (manual)
+# On-demand no-database validation. Intentionally no push/pull_request triggers.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Why are quick checks needed?
+        type: choice
+        required: true
+        default: review
+        options:
+          - review
+          - regression
+          - maintenance
+permissions:
+  contents: read
+concurrency:
+  group: quick-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install uv==0.12.23
+      - run: uv sync --frozen --no-editable --extra dev --python 3.12
+      - name: Scoped Ruff (matches full integration)
+        run: >-
+          .venv/bin/ruff check apps packages tests scripts
+          infra/migrations/env.py
+          infra/migrations/versions/0009_fail_closed_rls.py
+          infra/migrations/versions/0010_immutable_evidence_lineage.py
+          infra/migrations/versions/0011_index_reconciliation.py
+          infra/migrations/versions/0012_task_execution_lifecycle.py
+      - name: Offline contract regressions (no PG/Qdrant)
+        run: >-
+          .venv/bin/pytest -q
+          tests/test_page_eval_baseline.py
+          tests/test_openai_compatible_provider.py
+          tests/test_retrieval_metrics.py
+          tests/test_cleanup_merged_branches.py

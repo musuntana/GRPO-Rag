@@ -1,8 +1,27 @@
-name: S0 installation and storage contracts
-on: [push, pull_request]
+name: Full integration (manual)
+# Expensive PG + Qdrant + Poppler suite. NEVER trigger on push or PR synchronize.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Why is a full integration validation needed?
+        type: choice
+        required: true
+        default: pre-merge
+        options:
+          - pre-merge
+          - release
+          - regression
+          - incident
+permissions:
+  contents: read
+concurrency:
+  group: full-integration-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   local-contracts:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:18
