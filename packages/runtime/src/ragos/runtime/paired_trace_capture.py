@@ -17,6 +17,11 @@ from ragos.retrieval.types import EvalCase, RetrieverProfile, ScoredChunk
 from ragos.runtime.index_plan import IndexPlan
 from ragos.runtime.page_trace_capture import capture_page_ranking_trace
 
+# Hard bounds prevent a private 1,200-case benchmark from retaining unbounded
+# source passages. Operators may run several separately frozen batches.
+MAX_CACHED_CHUNKS = 20_000
+MAX_CACHED_TEXT_CHARS = 32 * 1024 * 1024
+
 _IMMUTABLE = tuple(
     field.name for field in fields(ScoredChunk)
     if field.name not in ("score", "rerank_score")
@@ -29,15 +34,25 @@ class _FrozenDense:
     def __init__(self, dense: Any) -> None:
         self._dense = dense
         self._by_question: dict[str, tuple[ScoredChunk, ...]] = {}
+        self._cached_chunks = 0
+        self._cached_text_chars = 0
 
     async def recall(
         self, query: str, tenant_ctx: TenantContext, profile: RetrieverProfile
     ) -> list[ScoredChunk]:
         if query not in self._by_question:
             hits = await self._dense.recall(query, tenant_ctx, profile)
-            if not isinstance(hits, list):
-                raise ValidationError("dense recall must return a list")
+            if not isinstance(hits, list) or any(not isinstance(hit, ScoredChunk) for hit in hits):
+                raise ValidationError("dense recall must return ScoredChunk records")
+            added_chars = sum(len(hit.text) + len(hit.source_text or "") for hit in hits)
+            if (
+                self._cached_chunks + len(hits) > MAX_CACHED_CHUNKS
+                or self._cached_text_chars + added_chars > MAX_CACHED_TEXT_CHARS
+            ):
+                raise ValidationError("paired trace candidate cache exceeded the memory budget")
             self._by_question[query] = tuple(replace(hit) for hit in hits)
+            self._cached_chunks += len(hits)
+            self._cached_text_chars += added_chars
         return [replace(hit) for hit in self._by_question[query]]
 
 
@@ -109,6 +124,8 @@ async def capture_paired_page_traces(
     """
     if split not in ("dev", "holdout"):
         raise ValidationError("paired quality capture does not allow training split")
+    if type(profile.top_k_rerank) is not int or profile.top_k_rerank < 1:
+        raise ValidationError("paired capture needs a positive rerank depth")
     if not profile.rerank_model_profile or not callable(reranker_fn):
         raise ValidationError("paired capture requires an authorized model reranker")
     if baseline_version == reranker_version:
