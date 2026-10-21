@@ -12,6 +12,7 @@ from ragos.core.errors import ValidationError
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.identity import EvidenceIdentity
 from ragos.retrieval.types import EvalCase, GoldEvidence, RetrieverProfile, ScoredChunk
+from ragos.runtime import paired_trace_capture
 from ragos.runtime.paired_trace_capture import capture_paired_page_traces
 
 
@@ -152,4 +153,33 @@ def test_profile_must_have_explicit_rerank_model() -> None:
 
     with pytest.raises(ValidationError, match="authorized model reranker"):
         _run(ctx, plan, case, replace(profile, rerank_model_profile=None), dense, scored)
+    assert dense.calls == 0
+
+
+def test_bounded_cache_fails_before_model_call(monkeypatch) -> None:
+    ctx, plan, case, profile, chunks = _inputs()
+    dense = _Dense(chunks)
+    monkeypatch.setattr(paired_trace_capture, "MAX_CACHED_CHUNKS", 2)
+    model_calls = 0
+
+    async def scored(query, candidates, tenant_ctx):
+        nonlocal model_calls
+        model_calls += 1
+        return candidates
+
+    with pytest.raises(ValidationError, match="memory budget"):
+        _run(ctx, plan, case, profile, dense, scored)
+    assert dense.calls == 1
+    assert model_calls == 0
+
+
+def test_zero_rerank_depth_refused_before_retrieval() -> None:
+    ctx, plan, case, profile, chunks = _inputs()
+    dense = _Dense(chunks)
+
+    async def scored(query, candidates, tenant_ctx):
+        return candidates
+
+    with pytest.raises(ValidationError, match="positive rerank depth"):
+        _run(ctx, plan, case, replace(profile, top_k_rerank=0), dense, scored)
     assert dense.calls == 0
