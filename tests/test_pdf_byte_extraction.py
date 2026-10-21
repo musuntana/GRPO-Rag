@@ -12,8 +12,8 @@ import pytest
 from ragos.core.errors import ProviderError, ValidationError
 from ragos.model_gateway.providers import ChatChunk, EmbedResult
 from ragos.retrieval.local_probe import DOC, _chunks, run_probe
-from ragos.retrieval.parse.pdf_bytes import extract_pdf_bytes
 from ragos.retrieval.parse.page_chunker import ChunkerConfig, PageChunker
+from ragos.retrieval.parse.pdf_bytes import extract_pdf_bytes
 
 POPPLER_INSTALLED = shutil.which("pdftotext") is not None
 needs_poppler = pytest.mark.skipif(not POPPLER_INSTALLED, reason="poppler-utils is not installed")
