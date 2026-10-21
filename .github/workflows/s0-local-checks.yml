@@ -14,7 +14,7 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
       qdrant:
-        image: qdrant/qdrant:v1.15.1-unprivileged
+        image: qdrant/qdrant:v1.19.1-unprivileged
         ports: [6333:6333]
     env:
       RAGOS_APP_ENV: test
