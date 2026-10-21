@@ -15,7 +15,6 @@ from uuid import UUID
 from ragos.core.errors import PermissionDeniedError, ValidationError
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.offline_eval import (
-    FORMAT_VERSION,
     MAX_CASES,
     MAX_GOLD,
     MAX_RANKED,
