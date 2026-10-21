@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -221,8 +222,19 @@ def run_probe(
     embedding_version: str,
     client: QdrantClient | None = None,
     pdf_bytes: bytes | None = None,
+    expected_embedding_dim: int | None = None,
+    embedding_profile: str = "s1_probe",
+    collection_prefix: str = "ragos_local",
 ) -> ProbeResult:
     """Execute the synthetic evidence path without durable tenant state."""
+    if (
+        expected_embedding_dim is not None
+        and (
+            type(expected_embedding_dim) is not int
+            or not 1 <= expected_embedding_dim <= 8192
+        )
+    ):
+        raise ValidationError("probe expected embedding dimension is invalid")
     if not embedding_model or not chat_model or not embedding_version:
         raise ValidationError("probe requires explicit model names and embedding version")
     if embedding_version == "hash-test":
@@ -235,18 +247,33 @@ def run_probe(
 
         def embed_one(text: str) -> list[float]:
             result = provider.embed(texts=[text], model=embedding_model)
-            if len(result.embeddings) != 1:
+            if not isinstance(result.embeddings, list) or len(result.embeddings) != 1:
                 raise ProviderError("probe embedding provider returned wrong count")
-            return result.embeddings[0]
+            vector = result.embeddings[0]
+            if (
+                not isinstance(vector, list)
+                or not vector
+                or (
+                    expected_embedding_dim is not None
+                    and len(vector) != expected_embedding_dim
+                )
+                or any(
+                    type(value) not in (int, float) or not math.isfinite(value)
+                    for value in vector
+                )
+                or not any(value != 0 for value in vector)
+            ):
+                raise ProviderError("probe embedding dimension or numeric contract failed")
+            return [float(value) for value in vector]
 
         first_vector = embed_one(chunks[0].body)
         writer = QdrantVectorIndexWriter(
             client=vector_client,
             embedding_fn=embed_one,
             embedding_dim=len(first_vector),
-            embedding_profile="s1_probe",
+            embedding_profile=embedding_profile,
             embedding_version=embedding_version,
-            collection_prefix="ragos_local",
+            collection_prefix=collection_prefix,
         )
         writer.upsert(tenant_ctx=ctx, tier=SearchTier.STABLE, chunks=chunks)
         digest = writer.reconcile(tenant_ctx=ctx, tier=SearchTier.STABLE, chunks=chunks)

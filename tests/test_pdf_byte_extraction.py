@@ -14,55 +14,10 @@ from ragos.model_gateway.providers import ChatChunk, EmbedResult
 from ragos.retrieval.local_probe import DOC, _chunks, run_probe
 from ragos.retrieval.parse.page_chunker import ChunkerConfig, PageChunker
 from ragos.retrieval.parse.pdf_bytes import extract_pdf_bytes
+from ragos.retrieval.synthetic_pdf import make_synthetic_pdf as _make_pdf
 
 POPPLER_INSTALLED = shutil.which("pdftotext") is not None
 needs_poppler = pytest.mark.skipif(not POPPLER_INSTALLED, reason="poppler-utils is not installed")
-
-
-def _make_pdf(pages: list[str]) -> bytes:
-    """Build a valid, small, two-level PDF object tree with real text operators."""
-    count = len(pages)
-    font_id = 3 + 2 * count
-    children = " ".join(f"{3 + 2 * i} 0 R" for i in range(count))
-    objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        f"<< /Type /Pages /Kids [{children}] /Count {count} >>".encode(),
-    ]
-    for i, text in enumerate(pages):
-        page_id = 3 + 2 * i
-        content_id = page_id + 1
-        objects.append(
-            (
-                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 800] "
-                f"/Resources << /Font << /F1 {font_id} 0 R >> >> "
-                f"/Contents {content_id} 0 R >>"
-            ).encode()
-        )
-        escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-        stream = f"BT /F1 12 Tf 50 740 Td ({escaped}) Tj ET".encode()
-        objects.append(
-            b"<< /Length " + str(len(stream)).encode()
-            + b" >>\nstream\n" + stream + b"\nendstream"
-        )
-    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
-    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
-    offsets = [0]
-    for i, value in enumerate(objects, 1):
-        offsets.append(len(pdf))
-        pdf.extend(f"{i} 0 obj\n".encode())
-        pdf.extend(value)
-        pdf.extend(b"\nendobj\n")
-    start_xref = len(pdf)
-    pdf.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode())
-    for offset in offsets[1:]:
-        pdf.extend(f"{offset:010d} 00000 n \n".encode())
-    pdf.extend(
-        (
-            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-            f"startxref\n{start_xref}\n%%EOF\n"
-        ).encode()
-    )
-    return bytes(pdf)
 
 
 @needs_poppler
