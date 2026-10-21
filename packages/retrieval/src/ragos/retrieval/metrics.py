@@ -39,12 +39,29 @@ def _key(grade: Grade | GoldEvidence) -> tuple[str, int | None]:
     return str(grade.doc_id), grade.page_no
 
 
+def unique_evidence(retrieved: Iterable[Grade]) -> list[Grade]:
+    """Keep the first hit for each (document, page), preserving rank.
+
+    Vector search commonly returns several chunks from the same page. Counting
+    them as distinct evidence inflates NDCG/precision and wastes Top-K slots.
+    """
+    seen: set[tuple[str, int | None]] = set()
+    result: list[Grade] = []
+    for item in retrieved:
+        key = _key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
 def precision_at_k(
     retrieved: Sequence[Grade],
     gold: Iterable[GoldEvidence],
     k: int,
 ) -> float:
-    top = list(retrieved)[:k]
+    top = unique_evidence(retrieved)[:k]
     if not top:
         return 0.0
     gold_grades = {_key(g): g.grade for g in gold}
@@ -66,7 +83,7 @@ def recall_at_k(
     gold_positive = {_key(g) for g in gold if g.grade > 0}
     if not gold_positive:
         return 0.0
-    top_evidence = {_key(c) for c in list(retrieved)[:k]}
+    top_evidence = {_key(c) for c in unique_evidence(retrieved)[:k]}
     return len(gold_positive & top_evidence) / len(gold_positive)
 
 
@@ -75,7 +92,7 @@ def reciprocal_rank(
     gold: Iterable[GoldEvidence],
 ) -> float:
     gold_positive = {_key(g) for g in gold if g.grade > 0}
-    for rank, candidate in enumerate(retrieved, start=1):
+    for rank, candidate in enumerate(unique_evidence(retrieved), start=1):
         if _key(candidate) in gold_positive:
             return 1.0 / rank
     return 0.0
@@ -110,7 +127,7 @@ def ndcg_at_k(
     k: int,
 ) -> float:
     gold_grades = {_key(g): g.grade for g in gold}
-    actual = [gold_grades.get(_key(c), 0) for c in list(retrieved)[:k]]
+    actual = [gold_grades.get(_key(c), 0) for c in unique_evidence(retrieved)[:k]]
     ideal = sorted(gold_grades.values(), reverse=True)[:k]
     idcg = dcg(ideal)
     if idcg <= 0.0:
@@ -123,7 +140,7 @@ def hit_at_k(retrieved: Sequence[Grade], gold: Iterable[GoldEvidence], k: int) -
     target = {_key(g) for g in gold if g.grade >= 3}
     if not target:
         return 0.0
-    return 1.0 if any(_key(c) in target for c in list(retrieved)[:k]) else 0.0
+    return 1.0 if any(_key(c) in target for c in unique_evidence(retrieved)[:k]) else 0.0
 
 
 def citation_accuracy(supported: int, generated: int) -> float:
@@ -202,7 +219,10 @@ def evaluate_retrieval(
         return mean(fn(r, c.gold_evidence, *args) for c, r in paired)
 
     def mrr_per_case() -> float:
-        return mean(reciprocal_rank(r, c.gold_evidence) for c, r in paired)
+        return mean(
+            reciprocal_rank(unique_evidence(r)[:10], c.gold_evidence)
+            for c, r in paired
+        )
 
     return RetrievalMetrics(
         recall_at_5=per_case(recall_at_k, 5),
