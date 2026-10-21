@@ -44,6 +44,12 @@ class _FrozenDense:
             hits = await self._dense.recall(query, tenant_ctx, profile)
             if not isinstance(hits, list) or any(not isinstance(hit, ScoredChunk) for hit in hits):
                 raise ValidationError("dense recall must return ScoredChunk records")
+            if any(
+                not isinstance(hit.text, str)
+                or (hit.source_text is not None and not isinstance(hit.source_text, str))
+                for hit in hits
+            ):
+                raise ValidationError("dense recall returned invalid text fields")
             added_chars = sum(len(hit.text) + len(hit.source_text or "") for hit in hits)
             if (
                 self._cached_chunks + len(hits) > MAX_CACHED_CHUNKS
