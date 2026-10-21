@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     local_model_base_url: str = ""
     local_model_chat: str = ""
     local_model_embed: str = ""
+    # Operator-recorded revision; not independently attested by the gateway.
+    local_model_embed_revision: str = ""
     local_model_embed_dimension: int = Field(default=0, ge=0, le=8192)
 
     model_config = SettingsConfigDict(

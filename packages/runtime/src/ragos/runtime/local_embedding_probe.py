@@ -140,4 +140,11 @@ class LocalFrozenEmbedding:
             embedding_version=self.spec.version,
             tier=SearchTier.STABLE,
         )
-        return DenseRecall(client, collection, self.query, source=source)
+        return DenseRecall(
+            client,
+            collection,
+            self.query,
+            source=source,
+            embedding_profile=self.spec.profile,
+            embedding_version=self.spec.version,
+        )

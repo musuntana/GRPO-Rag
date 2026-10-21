@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from qdrant_client import QdrantClient
+from ragos.core.config import Settings
 from ragos.core.errors import ProviderError, ValidationError
 from ragos.model_gateway.providers.openai_compatible import OpenAICompatibleProvider
 from ragos.runtime.local_embedding_probe import FrozenEmbeddingSpec, LocalFrozenEmbedding
+from ragos.runtime.retrieval import build_recall_channels, dense_collection_name
 from ragos.storage.repositories.search import SearchRepository, SearchTier
 from test_pdf_pg_index_integration import _real_pdf_fixture
 from test_qdrant_server_pg_reconnect import qdrant_url
@@ -185,3 +188,135 @@ def _retriever_profile(tenant_id):
         recall_channels=["dense"], channel_budgets={"dense": 1.0},
         top_k_recall=10,
     )
+
+
+def test_gateway_dense_recall_reads_only_published_matching_embedding_space(
+    database, qdrant_url, tmp_path
+) -> None:
+    """Real Poppler -> published PG -> server Qdrant -> gateway query hydration.
+
+    This invokes a synthetic HTTP transport, NOT real Qwen weights. The local
+    tenant model admission is separately tested by test_local_model_router.
+    """
+    spec = FrozenEmbeddingSpec(
+        model=MODEL, model_digest=DIGEST, dimension=3,
+        profile="ci_" + uuid4().hex[:12],
+    )
+    http = FixtureEmbeddingHTTP()
+    binding = _binding(http=http, spec=spec)
+    fixture = _real_pdf_fixture(database, tmp_path, embedding=binding)
+    fixture.client.close()
+    writer = QdrantClient(url=qdrant_url, timeout=5)
+    fixture.client = writer
+    fixture.writer = binding.writer(writer)
+    collection = fixture.writer.collection_name(SearchTier.STABLE)
+    reader = None
+
+    class AuthorizedLocalRouter:
+        _local = SimpleNamespace(embedding_model=MODEL, embedding_dimension=3)
+        def __init__(self) -> None:
+            self.calls = []
+
+        def embed(self, tenant_ctx, *, texts, use_case="embed", **kwargs):
+            assert tenant_ctx.tenant_id == fixture.ctx.tenant_id
+            assert use_case == "embed"
+            self.calls.extend(texts)
+            return binding.transport.embed(texts=texts, model=spec.model)
+
+    router = AuthorizedLocalRouter()
+    settings = Settings(
+        _env_file=None,
+        app_env="dev", api_host="127.0.0.1", local_model_enabled=True,
+        local_model_embed=spec.model,
+        local_model_embed_dimension=spec.dimension,
+        local_model_embed_revision=spec.model_digest,
+        embedding_profile=spec.profile, embedding_version=spec.version,
+        qdrant_url=qdrant_url,
+    )
+    try:
+        fixture.service().execute(manifest_id=fixture.plan.index_id)
+        writer.close()
+        reader = QdrantClient(url=qdrant_url, timeout=5)
+        with scoped_session(database, fixture.ctx) as session:
+            channels = build_recall_channels(
+                session=session,
+                tenant_ctx=fixture.ctx,
+                settings=settings,
+                router=router,
+                qdrant_client=reader,
+            )
+            assert channels["dense"].collection == dense_collection_name(settings)
+            hits = asyncio.run(
+                channels["dense"].recall(
+                    "Contract warranty period is 24 months.",
+                    fixture.ctx,
+                    _retriever_profile(fixture.ctx.tenant_id),
+                )
+            )
+            assert {h.page_no for h in hits} == {1, 2}
+            assert all(h.source_identity.index_id == fixture.plan.index_id for h in hits)
+            assert router.calls
+            repo = SearchRepository(session, fixture.ctx)
+            chunk_ids = [chunk.id for chunk in fixture.plan.chunks]
+            assert repo.get_chunks_by_ids(
+                tier=SearchTier.STABLE,
+                scope_key=fixture.ctx.require_scope_key(),
+                chunk_ids=chunk_ids,
+                embedding_profile=spec.profile,
+                embedding_version=spec.version,
+            )
+            assert repo.get_chunks_by_ids(
+                tier=SearchTier.STABLE,
+                scope_key=fixture.ctx.require_scope_key(),
+                chunk_ids=chunk_ids,
+                embedding_profile=spec.profile,
+                embedding_version="other-frozen-version",
+            ) == []
+    finally:
+        cleanup = reader or QdrantClient(url=qdrant_url, timeout=5)
+        try:
+            if collection in {c.name for c in cleanup.get_collections().collections}:
+                cleanup.delete_collection(collection_name=collection)
+        finally:
+            cleanup.close()
+            writer.close()
+
+
+def test_dev_dense_refuses_identity_mismatch_before_gateway_or_vector_call(
+    monkeypatch,
+) -> None:
+    from ragos.core.tenant import TenantContext
+
+    ctx = TenantContext(
+        tenant_id=uuid4(), tenant_slug="test", actor_id="dev", trace_id="t"
+    )
+    model = MODEL
+    spec = FrozenEmbeddingSpec(
+        model=model, model_digest=DIGEST, dimension=3,
+        profile="ci_probe",
+    )
+    cfg = Settings(
+        _env_file=None, app_env="dev", api_host="127.0.0.1",
+        local_model_enabled=True, local_model_embed=model,
+        local_model_embed_revision=DIGEST,
+        local_model_embed_dimension=3,
+        embedding_profile=spec.profile, embedding_version="wrong-identity",
+        qdrant_url="http://127.0.0.1:6333",
+    )
+    fake_router = SimpleNamespace(
+        _local=SimpleNamespace(embedding_model=model, embedding_dimension=3)
+    )
+    with pytest.raises(ValidationError, match="identity mismatch"):
+        build_recall_channels(
+            session=object(), tenant_ctx=ctx,
+            settings=cfg, router=fake_router, qdrant_client=object()
+        )
+    with pytest.raises(ValidationError, match="local Qdrant"):
+        build_recall_channels(
+            session=object(), tenant_ctx=ctx,
+            settings=cfg.model_copy(update={
+                "embedding_version": spec.version,
+                "qdrant_url": "http://remote.example.com:6333",
+            }),
+            router=fake_router, qdrant_client=object(),
+        )
