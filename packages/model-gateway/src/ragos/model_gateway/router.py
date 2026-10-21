@@ -3,9 +3,16 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from ragos.core.config import get_settings
+from ragos.core.errors import ProviderError, ValidationError
 from ragos.core.logging import get_logger
 from ragos.core.tenant import TenantContext
 from ragos.model_gateway.key_pool import KeyPoolManager
+from ragos.model_gateway.local_admission import (
+    LocalModelAdmission,
+    LocalPinnedProvider,
+    local_admission_from_settings,
+)
 from ragos.model_gateway.profiles import ProfileResolver
 from ragos.model_gateway.providers import ChatChunk, EmbedResult, ResolvedRoute
 from sqlmodel import Session
@@ -25,10 +32,30 @@ class ModelRouter:
     traversal are not applied.
     """
 
-    def __init__(self, session: Session, *, allow_test_stub: bool = False) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        allow_test_stub: bool = False,
+        local_model: LocalModelAdmission | None = None,
+    ) -> None:
+        settings = get_settings()
+        if local_model is not None and settings.app_env != "dev":
+            raise ValidationError("local model gateway may only run in development")
+        if local_model is not None and settings.api_host not in {
+            "localhost", "127.0.0.1", "::1"
+        }:
+            raise ValidationError("local model gateway requires loopback-bound API")
         self._session = session
         self._profiles = ProfileResolver(session)
         self._keys = KeyPoolManager(session, allow_test_stub=allow_test_stub)
+        # The deployed default requires an explicit environment opt-in.
+        # No tenant-controlled request field can turn on local model access.
+        self._local = (
+            local_model
+            if local_model is not None
+            else local_admission_from_settings(settings)
+        )
 
     def resolve(
         self,
@@ -47,23 +74,38 @@ class ModelRouter:
             use_case=use_case,
             profile_override=profile_override,
         )
-        self._keys.admit_provider(profile.provider_id)
-        lease = self._keys.acquire_key(profile.provider_id)
-        provider = self._keys.build_provider(lease)
+        if self._local is not None and profile.provider_id == self._local.provider_id:
+            # Tenant profile resolution above authorizes this use_case first.
+            expected_model = self._local.model_for(use_case)
+            if profile.model_name != expected_model:
+                raise ProviderError("Local model profile is not admitted")
+            if use_case == "embed" and profile.parameters:
+                raise ProviderError("Local embedding parameters are not admitted")
+            slug = self._keys.admit_local_provider(
+                profile.provider_id, expected_base_url=self._local.base_url
+            )
+            provider = LocalPinnedProvider(self._local)
+        else:
+            # Ordinary provider credentials are NOT connected: never send
+            # database ciphertext or unapproved URLs to the HTTP adapter.
+            self._keys.admit_provider(profile.provider_id)
+            lease = self._keys.acquire_key(profile.provider_id)
+            provider = self._keys.build_provider(lease)
+            slug = lease.provider_slug
 
         LOGGER.info(
             "model route resolved",
             extra={
                 "tenant_slug": tenant_ctx.tenant_slug,
                 "use_case": use_case,
-                "provider": lease.provider_slug,
+                "provider": slug,
                 "model": profile.model_name,
             },
         )
 
         return ResolvedRoute(
             provider=provider,
-            provider_slug=lease.provider_slug,
+            provider_slug=slug,
             model_name=profile.model_name,
             parameters=profile.parameters,
             profile_id=str(profile.id),

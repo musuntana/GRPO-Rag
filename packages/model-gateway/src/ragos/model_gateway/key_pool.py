@@ -54,6 +54,22 @@ class KeyPoolManager:
         if not self._is_connected(provider.provider_type):
             raise ProviderError(UNAVAILABLE_MESSAGE)
 
+    def admit_local_provider(self, provider_id: UUID, *, expected_base_url: str) -> str:
+        """Authorize a pinned local provider without reading any key-pool row.
+
+        Both the platform provider ID and exact URL must match operator-side
+        configuration, and the provider must be explicitly active.
+        """
+        provider = self._provider_repo.get_by_id(provider_id)
+        if (
+            provider is None
+            or not provider.is_active
+            or provider.provider_type != "local_openai"
+            or provider.base_url != expected_base_url
+        ):
+            raise ProviderError(UNAVAILABLE_MESSAGE)
+        return provider.slug
+
     def acquire_key(self, provider_id: UUID) -> KeyLease:
         """Select the next active key for *provider_id* by weighted
         round-robin. Raises ``ProviderError`` if no active keys exist."""
