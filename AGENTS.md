@@ -1,5 +1,7 @@
 # AGENTS.md
 
+> **当前 HEAD/CI/能力事实以 [CURRENT_BASELINE](docs/CURRENT_BASELINE.md) 为准；验证策略见 [CI_POLICY](docs/CI_POLICY.md)。** 旧项目进度日志及单次实施报告不得用作当前完成状态。
+
 本文件是所有开发 agent 的入口，适用于整个仓库。遵守用户本次授权；读材料、制定规范不自动授权部署、付费训练、删除持久数据或修改其他人的工作。
 
 ## 1. 目标与阅读顺序

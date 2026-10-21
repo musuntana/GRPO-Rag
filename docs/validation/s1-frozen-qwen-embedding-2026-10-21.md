@@ -1,5 +1,7 @@
 # S1 local Qwen Embedding: frozen model and shared index/query identity
 
+> **向量集合身份更新（2026-10-21）：** 本地冻结 Embedding 版本指纹纳入模型名称、权重版本标识以及**向量维度**。旧索引必须保留并按新身份影子重建/对账，不得原地混写；该更改尚不构成实际模型权重的密码学证明。当前基线见 [CURRENT_BASELINE](../CURRENT_BASELINE.md)。
+
 **Status:** opt-in local integration, not admitted multi-tenant Model Gateway.
 This patch wires an OpenAI-compatible Embedding transport into the
 **existing** immutable PDF IndexPlan, QdrantVectorIndexWriter and DenseRecall.

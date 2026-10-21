@@ -1,5 +1,7 @@
 # 开发顺序与阶段验收
 
+> **路线图是阶段目标，不是 HEAD 验收状态。** 主线最新能力、PR 与 CI 证据见 [CURRENT_BASELINE](CURRENT_BASELINE.md)。CI 触发与分支维护见 [CI_POLICY](CI_POLICY.md)；不要再把 2026-10-09 的 S0 快照当成最新 S1 状态。
+
 更新：2026-10-09。初始审查基线：`d5a2709814b4c4b82f27ebf870f60e8e23669195`；最新执行裁决见 [项目推进记录](project-progress.md)。本文件决定实施先后，替代旧 [implementation](implementation.md) 的 M0–M10 顺序；[architecture](architecture.md) 仍决定架构，验收执行 [constraints](development-constraints.md)。
 
 ## 1. 项目目标与当前事实
