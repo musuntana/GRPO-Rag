@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
@@ -175,10 +176,14 @@ class _FakeChatRequestRepo:
                 raise ConflictError("Idempotency-Key is already bound to a different request")
             return existing, False
         result = SimpleNamespace(
-            id=uuid4(), status="claimed", request_digest=request_digest
+            id=uuid4(), status="claimed", request_digest=request_digest,
+            created_at=datetime.now(UTC),
         )
         self.store.claims[key] = result
         return result, True
+
+    def require_actor_run(self, *, conversation_id, run_id):
+        return self._require(conversation_id, run_id)
 
     def _require(self, conversation_id, run_id):
         self.store.messages.conversations.require_by_id(conversation_id)
@@ -777,3 +782,145 @@ def test_pending_idempotent_claim_returns_original_run_without_generation(
     assert response.status_code == 202
     assert response.json()["run_id"] == str(original.id)
     assert len(client.retrieval.calls) == 0  # type: ignore[attr-defined]
+
+
+# -- read-only durable run status and reconciliation signals -----------------
+
+
+def _status_url(run_id: str, *, conversation_id: str = CONVERSATION_ID) -> str:
+    return f"/chat/conversations/{conversation_id}/runs/{run_id}"
+
+
+def test_run_status_completed_requires_verifiable_sse_and_no_new_model_call(
+    client: TestClient,
+) -> None:
+    first = _send_run(client)
+    assert first.status_code == 200
+    run_id = first.headers["X-Run-ID"]
+    model_calls = len(client.retrieval.calls)  # type: ignore[attr-defined]
+    message_writes = len(client.messages.appended)  # type: ignore[attr-defined]
+    result = client.get(_status_url(run_id), headers=_headers())
+    assert result.status_code == 200
+    assert result.headers["X-Run-ID"] == run_id
+    assert result.headers["cache-control"] == "no-store"
+    assert result.json() == {
+        "run_id": run_id,
+        "status": "completed",
+        "replay_ready": True,
+        "attention_required": False,
+        "next_action": "replay_events",
+        "events_url": f"{_status_url(run_id)}/events",
+    }
+    assert len(client.retrieval.calls) == model_calls  # type: ignore[attr-defined]
+    assert len(client.messages.appended) == message_writes  # type: ignore[attr-defined]
+
+
+def test_run_status_completed_but_missing_log_requires_reconciliation(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    original = _send_run(client)
+    run_id = original.headers["X-Run-ID"]
+    monkeypatch.setattr(
+        chat_route, "EventLog", lambda *args, **kwargs: EventLog(tmp_path / "missing")
+    )
+    result = client.get(_status_url(run_id), headers=_headers())
+    assert result.status_code == 200
+    assert result.json() == {
+        "run_id": run_id,
+        "status": "completed",
+        "replay_ready": False,
+        "attention_required": True,
+        "next_action": "operator_reconcile",
+        "events_url": None,
+    }
+    assert len(client.retrieval.calls) == 1  # type: ignore[attr-defined]
+
+
+def test_corrupt_midstream_event_id_cannot_claim_replay_ready(
+    client: TestClient, tmp_path
+) -> None:
+    original = _send_run(client)
+    run_id = original.headers["X-Run-ID"]
+    files = list(tmp_path.rglob("events.jsonl"))
+    assert len(files) == 1
+    lines = files[0].read_text(encoding="utf-8").splitlines()
+    assert len(lines) > 2
+    record = json.loads(lines[1])
+    record["id"] = 999
+    lines[1] = json.dumps(record)
+    files[0].write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    state = client.get(_status_url(run_id), headers=_headers())
+    assert state.status_code == 200
+    assert state.json()["status"] == "completed"
+    assert state.json()["replay_ready"] is False
+    assert state.json()["next_action"] == "operator_reconcile"
+    replay = client.get(_status_url(run_id) + "/events", headers=_headers())
+    assert replay.status_code == 404
+
+
+def test_fresh_claimed_run_is_only_pollable_not_replayable(client: TestClient) -> None:
+    key = (UUID(TENANT_ID), USER_ID, UUID(CONVERSATION_ID), "pending-run-key-1234")
+    run_id = uuid4()
+    client.claims.claims[key] = SimpleNamespace(  # type: ignore[attr-defined]
+        id=run_id, status="claimed", created_at=datetime.now(UTC),
+    )
+    result = client.get(_status_url(str(run_id)), headers=_headers())
+    assert result.status_code == 200
+    assert result.json()["next_action"] == "poll_status"
+    assert result.json()["replay_ready"] is False
+    assert result.json()["attention_required"] is False
+    assert client.retrieval.calls == []  # type: ignore[attr-defined]
+
+
+def test_aged_claim_is_advisory_no_automatic_rerun(client: TestClient) -> None:
+    key = (UUID(TENANT_ID), USER_ID, UUID(CONVERSATION_ID), "old-run-key-123456")
+    run_id = uuid4()
+    client.claims.claims[key] = SimpleNamespace(  # type: ignore[attr-defined]
+        id=run_id, status="claimed",
+        created_at=datetime.now(UTC) - timedelta(minutes=30),
+    )
+    result = client.get(_status_url(str(run_id)), headers=_headers())
+    assert result.status_code == 200
+    assert result.json()["status"] == "claimed"
+    assert result.json()["attention_required"] is True
+    assert result.json()["next_action"] == "operator_reconcile"
+    assert client.claims.claims[key].status == "claimed"  # type: ignore[attr-defined]
+    assert client.retrieval.calls == []  # type: ignore[attr-defined]
+
+
+def test_failed_run_reports_operator_attention_without_replay(
+    client: TestClient,
+) -> None:
+    key = (UUID(TENANT_ID), USER_ID, UUID(CONVERSATION_ID), "failed-run-key-1234")
+    run_id = uuid4()
+    client.claims.claims[key] = SimpleNamespace(  # type: ignore[attr-defined]
+        id=run_id, status="failed", created_at=datetime.now(UTC),
+    )
+    result = client.get(_status_url(str(run_id)), headers=_headers())
+    assert result.status_code == 200
+    assert result.json()["status"] == "failed"
+    assert result.json()["attention_required"] is True
+    assert result.json()["next_action"] == "operator_reconcile"
+    assert result.json()["events_url"] is None
+    assert client.retrieval.calls == []  # type: ignore[attr-defined]
+
+
+def test_run_status_requires_actor_ownership_and_known_conversation(
+    client: TestClient,
+) -> None:
+    original = _send_run(client)
+    run_id = original.headers["X-Run-ID"]
+    unknown = client.get(_status_url(str(uuid4())), headers=_headers())
+    assert unknown.status_code == 404
+    wrong_conversation = client.get(
+        _status_url(run_id, conversation_id=str(uuid4())),
+        headers=_headers(),
+    )
+    assert wrong_conversation.status_code == 404
+    missing_actor = client.get(
+        _status_url(run_id), headers=_headers(subject="unknown_actor")
+    )
+    assert missing_actor.status_code == 403
+    no_auth = client.get(_status_url(run_id))
+    assert no_auth.status_code == 401

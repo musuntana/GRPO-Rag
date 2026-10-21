@@ -122,3 +122,50 @@ def test_db_unique_constraint_admits_exactly_one_concurrent_claim(database) -> N
         observations = [future.result(timeout=15) for future in futures]
     assert len({record_id for record_id, _ in observations}) == 1
     assert sum(created for _, created in observations) == 1
+
+
+def test_run_status_read_is_actor_scoped_and_does_not_mutate_claim(database) -> None:
+    ctx, conversation_id = _setup(database)
+    with scoped_session(database, ctx) as session:
+        request, created = ChatRequestRepository(session, ctx).claim(
+            conversation_id=conversation_id,
+            idempotency_key="read-only-status-key-1234",
+            request_digest=DIGEST,
+        )
+        assert created
+        run_id = request.id
+
+    with scoped_session(database, ctx) as session:
+        repo = ChatRequestRepository(session, ctx)
+        first = repo.require_actor_run(
+            conversation_id=conversation_id, run_id=run_id
+        )
+        assert first.id == run_id
+        assert first.status == "claimed"
+        assert first.finished_at is None
+
+    # A different authenticated actor in the SAME tenant cannot infer a
+    # run by possessing its UUID; even a known conversation UUID is private.
+    foreign = context(
+        ctx.tenant_id, ctx.allowed_kb_ids[0], user_id=uuid4()
+    )
+    with scoped_session(database, foreign) as session:
+        with pytest.raises(NotFoundError):
+            ChatRequestRepository(session, foreign).require_actor_run(
+                conversation_id=conversation_id, run_id=run_id
+            )
+
+    with scoped_session(database, ctx) as session:
+        repo = ChatRequestRepository(session, ctx)
+        with pytest.raises(NotFoundError):
+            repo.require_actor_run(
+                conversation_id=conversation_id, run_id=uuid4()
+            )
+        repo.complete(conversation_id=conversation_id, run_id=run_id)
+
+    with scoped_session(database, ctx) as session:
+        status = ChatRequestRepository(session, ctx).require_actor_run(
+            conversation_id=conversation_id, run_id=run_id
+        )
+        assert status.status == "completed"
+        assert status.finished_at is not None
