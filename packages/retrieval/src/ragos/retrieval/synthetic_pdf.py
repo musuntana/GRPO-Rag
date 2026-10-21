@@ -11,7 +11,7 @@ from ragos.core.errors import ValidationError
 
 
 def make_synthetic_pdf(pages: list[str]) -> bytes:
-    """Generate a bounded, text-only PDF with one physical page per string (blank negative fixtures allowed)."""
+    """Generate text-only pages, including blanks for negative parser tests."""
     if (
         not isinstance(pages, list)
         or not 1 <= len(pages) <= 10
