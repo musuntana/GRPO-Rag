@@ -836,6 +836,29 @@ def test_run_status_completed_but_missing_log_requires_reconciliation(
     assert len(client.retrieval.calls) == 1  # type: ignore[attr-defined]
 
 
+def test_corrupt_midstream_event_id_cannot_claim_replay_ready(
+    client: TestClient, tmp_path
+) -> None:
+    original = _send_run(client)
+    run_id = original.headers["X-Run-ID"]
+    files = list(tmp_path.rglob("events.jsonl"))
+    assert len(files) == 1
+    lines = files[0].read_text(encoding="utf-8").splitlines()
+    assert len(lines) > 2
+    record = json.loads(lines[1])
+    record["id"] = 999
+    lines[1] = json.dumps(record)
+    files[0].write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    state = client.get(_status_url(run_id), headers=_headers())
+    assert state.status_code == 200
+    assert state.json()["status"] == "completed"
+    assert state.json()["replay_ready"] is False
+    assert state.json()["next_action"] == "operator_reconcile"
+    replay = client.get(_status_url(run_id) + "/events", headers=_headers())
+    assert replay.status_code == 404
+
+
 def test_fresh_claimed_run_is_only_pollable_not_replayable(client: TestClient) -> None:
     key = (UUID(TENANT_ID), USER_ID, UUID(CONVERSATION_ID), "pending-run-key-1234")
     run_id = uuid4()

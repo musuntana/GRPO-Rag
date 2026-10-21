@@ -354,6 +354,7 @@ def _verified_completed_run_events(
         or events[-1].event != "run_finished"
         or events[-1].data.get("run_id") != str(run_id)
         or events[-1].data.get("message_id") != str(message.id)
+        or any(event.event_id != i for i, event in enumerate(events, start=1))
     ):
         raise NotFoundError("Completed chat run events not found")
     return events
