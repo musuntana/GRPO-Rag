@@ -121,8 +121,8 @@ async def capture_page_ranking_trace(
         raise PermissionDeniedError("page trace requires an explicitly authorized KB")
     if profile.tenant_id != tenant_ctx.tenant_id:
         raise PermissionDeniedError("retriever profile belongs to another tenant")
-    if split not in ("dev", "holdout"):
-        raise ValidationError("split must be dev or holdout")
+    if split not in ("train", "dev", "holdout"):
+        raise ValidationError("split must be train, dev or holdout")
     if not 1 <= len(cases) <= MAX_CASES or profile.top_k_recall > MAX_RANKED:
         raise ValidationError("page trace exceeds frozen case/rank limits")
     _nonnull(dataset_id, "dataset_id")
@@ -138,7 +138,7 @@ async def capture_page_ranking_trace(
 
     manifest = {
         "type": "manifest",
-        "schema_version": 1,
+        "schema_version": 2 if split == "train" else 1,
         "dataset_id": dataset_id,
         "tenant_id": str(tenant_ctx.tenant_id),
         "split": split,
