@@ -114,8 +114,8 @@ def mine_trace_pairs(raw: bytes, *, window: int = 50, related_cap: int = 4,
     if not 1 <= window <= 50 or not 0 <= related_cap <= 50 or not 0 <= irrelevant_cap <= 50:
         raise ValueError("invalid hard-negative rank window or per-positive caps")
     report, cases = _load(raw)
-    if report["split"] != "dev":
-        raise ValueError("holdout traces must never be mined for training")
+    if report["split"] != "train" or report["trace_format"] != "page-ranking-trace-train-v2":
+        raise ValueError("mining requires an approved train-v2 trace, never dev/holdout")
 
     pairs: list[dict[str, Any]] = []
     missed_positive = 0
@@ -165,7 +165,7 @@ def mine_trace_pairs(raw: bytes, *, window: int = 50, related_cap: int = 4,
     return {
         "evidence_kind": "offline_explicitly_graded_pairs_not_training",
         "trace_sha256": hashlib.sha256(raw).hexdigest(),
-        "split": "dev",
+        "split": "train",
         "dataset_id": report["dataset_id"],
         "index_id": report["index_id"],
         "retriever_version": report["retriever_version"],
@@ -199,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("baseline", type=Path)
     compare.add_argument("candidate", type=Path)
     compare.add_argument("--output", required=True, type=Path)
-    mine = commands.add_parser("mine", help="Mine explicit grade 0/1 negatives from dev")
+    mine = commands.add_parser("mine", help="Mine labelled train-v2 negatives only")
     mine.add_argument("trace", type=Path)
     mine.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
