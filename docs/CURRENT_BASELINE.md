@@ -20,6 +20,8 @@
 
 > **2026-10-21 增量（PR #12 已合并）**：聊天断线重连不再通过重新 POST 调用模型；现在有完成运行的会话授权 GET SSE 回放。该修复在 PR 分支的 [完整 CI #39593995266](https://github.com/musuntana/GRPO-Rag/actions/runs/39593995266) 上验证了 **946 passed**，且恢复了手动 CI 触发器；**未宣称此后 main 被自动重新测过**。完整流式在途恢复、持久请求幂等和 SQL 最终提交先于 run_finished 的时序问题仍待修复。
 
+> **2026-10-21 增量（PR #13 已合并）**：`ChatService` 现在使用显式持久化回调，在 PostgreSQL 成功提交用户/助手消息、引用和记忆写回任务**之后**，才发布 `memory_writeback_scheduled` 与 `run_finished` SSE。对应开发分支 [CI #39595380720](https://github.com/musuntana/GRPO-Rag/actions/runs/39595380720) 检查 **949 passed**。终态事件现在不会先于 SQL 提交，但仍没有幂等请求唯一键、跨进程运行中恢复，也不能保证 SQL 与文件日志原子提交。合并后 main 未再运行完整 CI，以避免重复消耗额度。
+
 ## 本轮治理内容
 
 - `push` 与 `pull_request` 在旧 workflow 同时触发完整 CI，容易为一次代码修改重复记账。统一改为 **手动 `workflow_dispatch`**：`Quick checks (manual)` 和 `Full integration (manual)`。不满足自动强制合并门槛时，由 reviewer 核对 **最新 HEAD 与手动 CI 结果一致**，不可盲信旧 run；团队如需 required status checks 应单独调整 GitHub 分支保护。
