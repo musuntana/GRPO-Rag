@@ -35,7 +35,6 @@ from test_storage_integration import (
     PreparedFixture,
     context,
     database,
-    execute_fixture,
     resources,
     scoped_session,
 )
@@ -133,7 +132,7 @@ def test_real_pdf_persists_published_page_evidence_in_pg_and_qdrant(database, tm
                 scope_key=fixture.ctx.scope_key,
             ) == []
 
-        result = execute_fixture(database, fixture)
+        result = fixture.service().execute(manifest_id=fixture.plan.index_id)
         assert result.indexing_state == "indexed"
         assert result.chunk_total == len(fixture.plan.chunks) == 4
         expected_digest = fixture.plan.projection_digest(fixture.ctx)
@@ -179,8 +178,14 @@ def test_real_pdf_persists_published_page_evidence_in_pg_and_qdrant(database, tm
         assert all("body" not in (point.payload or {}) for point in response.points)
         assert {point.payload["page_no"] for point in response.points} == {1, 2}
 
-        # Published execution is replayable but not rewritten.
-        fixture.service().execute(manifest_id=fixture.plan.index_id)
+        # Recheck within the same valid execution lease. Once the task is
+        # marked completed, the worker must not re-enter the fenced operation.
+        replay = fixture.service().execute(manifest_id=fixture.plan.index_id)
+        assert replay.indexing_state == "indexed"
+        with scoped_session(database, fixture.ctx) as session:
+            TaskRepository(session, fixture.ctx).mark_completed(
+                fixture.task_id, expected_attempts=fixture.attempts
+            )
     finally:
         fixture.client.close()
 
