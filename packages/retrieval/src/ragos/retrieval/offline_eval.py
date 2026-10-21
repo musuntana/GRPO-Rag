@@ -23,6 +23,7 @@ MAX_CASES = 5000
 MAX_GOLD = 50
 MAX_RANKED = 500
 FORMAT_VERSION = "page-ranking-trace-v1"
+TRAIN_FORMAT_VERSION = "page-ranking-trace-train-v2"
 METRICS_VERSION = "page-aware-dedup-mrr10-v2"
 _MANIFEST_KEYS = {
     "type", "schema_version", "dataset_id", "tenant_id", "split", "index_id",
@@ -117,10 +118,13 @@ def evaluate_trace_bytes(raw: bytes) -> dict[str, Any]:
         raise ValueError("invalid manifest JSON") from None
     if manifest["type"] != "manifest" or type(manifest["schema_version"]) is not int:
         raise ValueError("invalid manifest schema")
-    if manifest["schema_version"] != 1:
+    version = manifest["schema_version"]
+    if version not in (1, 2):
         raise ValueError("unsupported trace schema version")
-    if manifest["split"] not in ("dev", "holdout"):
-        raise ValueError("manifest split must be dev or holdout")
+    if version == 1 and manifest["split"] not in ("dev", "holdout"):
+        raise ValueError("v1 manifest split must be dev or holdout")
+    if version == 2 and manifest["split"] != "train":
+        raise ValueError("v2 manifest must use train split")
     metadata = {
         key: _name(manifest[key], label=key)
         for key in ("dataset_id", "embedding_profile", "embedding_version", "retriever_version")
@@ -158,7 +162,7 @@ def evaluate_trace_bytes(raw: bytes) -> dict[str, Any]:
         )
         ranks.append(retrieved)
     report = {
-        "trace_format": FORMAT_VERSION,
+        "trace_format": FORMAT_VERSION if version == 1 else TRAIN_FORMAT_VERSION,
         "metric_semantics": METRICS_VERSION,
         "trace_sha256": hashlib.sha256(raw).hexdigest(),
         "split": manifest["split"],
