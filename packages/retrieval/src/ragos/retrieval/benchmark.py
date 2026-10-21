@@ -49,6 +49,8 @@ def compare_page_traces(baseline_raw: bytes, candidate_raw: bytes) -> dict[str, 
     """
     baseline, first = _load(baseline_raw)
     candidate, second = _load(candidate_raw)
+    if baseline["trace_format"] != "page-ranking-trace-v1" or candidate["trace_format"] != "page-ranking-trace-v1":
+        raise ValueError("paired ranking evaluation requires dev/holdout v1, never train-v2")
     if any(baseline[key] != candidate[key] for key in _FROZEN_FIELDS):
         raise ValueError("paired traces must share frozen dataset, index, model and split")
     if first.keys() != second.keys():
