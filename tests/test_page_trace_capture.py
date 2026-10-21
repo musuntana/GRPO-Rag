@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import replace
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -16,6 +17,7 @@ from qdrant_client import QdrantClient
 from ragos.core.errors import PermissionDeniedError, ValidationError
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.offline_eval import evaluate_trace_bytes
+from ragos.retrieval.types import ScoredChunk
 from ragos.retrieval.types import EvalCase, GoldEvidence, RetrieverProfile
 from ragos.runtime.page_trace_capture import capture_page_ranking_trace
 from ragos.storage.repositories.search import SearchRepository, SearchTier
@@ -171,8 +173,6 @@ class _NeverCalledRetriever:
 
 
 def test_reject_invalid_gold_and_scope_before_retrieving() -> None:
-    from types import SimpleNamespace
-
     tenant_id, kb_id, doc_id, index_id = uuid4(), uuid4(), uuid4(), uuid4()
     ctx = TenantContext(
         tenant_id=tenant_id, tenant_slug="local", actor_id="fixture",
@@ -214,9 +214,6 @@ def test_reject_invalid_gold_and_scope_before_retrieving() -> None:
 
 
 def test_reject_fake_hydrated_page_identity_instead_of_optimistic_scoring() -> None:
-    from types import SimpleNamespace
-    from ragos.retrieval.types import ScoredChunk
-
     tenant_id, kb_id, doc_id, index_id, version_id, repr_id = [uuid4() for _ in range(6)]
     ctx = TenantContext(
         tenant_id=tenant_id, tenant_slug="fixture", actor_id="server",
