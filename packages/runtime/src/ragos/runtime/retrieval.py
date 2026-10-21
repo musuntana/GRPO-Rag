@@ -24,8 +24,8 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from uuid import UUID
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from ragos.core.config import Settings, get_settings
 from ragos.core.errors import ValidationError
