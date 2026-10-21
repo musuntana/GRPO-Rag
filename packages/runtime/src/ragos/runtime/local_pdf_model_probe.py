@@ -52,7 +52,10 @@ def run_synthetic_pdf_model_probe(
         "embedding_profile": embedding_spec.profile,
         "embedding_version": embedding_spec.version,
         "chat_model": chat_model,
-        "vector_store": "operator_provided_local_qdrant" if client is not None else "embedded_qdrant",
+        "vector_store": (
+            "operator_provided_local_qdrant"
+            if client is not None else "embedded_qdrant"
+        ),
         "retrieved_page_numbers": list(result.retrieved_pages),
         "hit_at_2": result.hit_at_2,
         "structural_citation_verdicts": list(result.structural_verdicts),

@@ -25,6 +25,8 @@ from ragos.storage.vector import collection_name
 from test_local_page_rag_probe import SyntheticProvider
 from test_qdrant_server_pg_reconnect import qdrant_url
 
+__all__ = ["qdrant_url"]
+
 needs_poppler = pytest.mark.skipif(
     shutil.which("pdftotext") is None, reason="Poppler is not installed"
 )
