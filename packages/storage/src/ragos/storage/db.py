@@ -12,7 +12,7 @@ from sqlmodel import Session, create_engine
 
 _ENGINE: Engine | None = None
 _SESSION_FACTORY: sessionmaker[Session] | None = None
-REQUIRED_SCHEMA_REVISION = "0012_task_execution_lifecycle"
+REQUIRED_SCHEMA_REVISION = "0013_chat_request_claims"
 
 
 def require_migrated_schema(engine: Engine, settings: Settings) -> None:

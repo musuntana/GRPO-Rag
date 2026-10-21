@@ -120,6 +120,36 @@ class Conversation(UUIDPrimaryKey, AppTenantScoped, Timestamped, RagosModel, tab
     status: str = Field(default="active", max_length=32)
 
 
+class ChatRequest(UUIDPrimaryKey, AppTenantScoped, Timestamped, RagosModel, table=True):
+    """One durable claimant per actor/conversation/idempotency key.
+
+    This is separate from the generic workflow Run table: a chat request
+    must not be re-leased automatically after ambiguous model/API failures.
+    Its UUID is the SSE run_id.
+    """
+    __tablename__ = "chat_request"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "user_id", "conversation_id", "idempotency_key",
+            name="uq_chat_request_actor_key",
+        ),
+        CheckConstraint(
+            "status IN ('claimed','completed','failed')",
+            name="ck_chat_request_status",
+        ),
+        {"schema": APP_SCHEMA},
+    )
+
+    user_id: UUID = Field(foreign_key=f"{APP_SCHEMA}.user.id", nullable=False, index=True)
+    conversation_id: UUID = Field(
+        foreign_key=f"{APP_SCHEMA}.conversation.id", nullable=False, index=True
+    )
+    idempotency_key: str = Field(max_length=128, nullable=False)
+    request_digest: str = Field(max_length=64, nullable=False)
+    status: str = Field(default="claimed", max_length=16, nullable=False)
+    finished_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
 class MessageIndex(UUIDPrimaryKey, AppTenantScoped, Timestamped, RagosModel, table=True):
     __tablename__ = "message_index"
     __table_args__ = {"schema": APP_SCHEMA}

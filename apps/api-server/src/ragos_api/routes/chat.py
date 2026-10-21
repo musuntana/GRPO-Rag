@@ -11,11 +11,13 @@ and only one of them was asked for.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from ragos.core.errors import (
     AuthenticationError,
@@ -36,6 +38,7 @@ from ragos.runtime.retrieval import (
     build_parent_resolver,
     build_recall_channels,
 )
+from ragos.storage.repositories.chat_requests import ChatRequestRepository
 from ragos.storage.repositories.conversations import (
     ConversationRepository,
     FeedbackRepository,
@@ -201,12 +204,16 @@ async def send_message(
     session: DBSession,
     tenant_ctx: TenantCtx,
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=12, max_length=128,
+        pattern=r"^[A-Za-z0-9_-]{12,128}$",
+    ),
 ):
-    """Start a NEW run only; replay always uses the separate authenticated GET.
+    """One durable, actor-scoped claim is required before any model work.
 
-    Re-sending this POST with Last-Event-ID must not silently call the model
-    again. Note: clients also need a durable request idempotency key for safe
-    blind retries without a cursor; that is a separate future contract.
+    Retried keys NEVER start new model calls. Only the first SQL claimant
+    receives the streaming response; follow-up requests receive the
+    persisted run ID/status and may use completed-run GET for replay.
     """
     if last_event_id is not None:
         raise ValidationError(
@@ -215,11 +222,55 @@ async def send_message(
     user_id = resolve_user(session, tenant_ctx)
     tenant_ctx = tenant_ctx.bind_user(user_id)
 
-    run_id = uuid4()
-    service = _service(session=session, tenant_ctx=tenant_ctx, payload=payload, run_id=run_id)
-    # Confirm the conversation belongs to this actor before any model call, so
-    # another actor's id is a 404 rather than an expensive refusal.
-    service.deps.messages.conversations.require_by_id(conversation_id)
+    # Database uniqueness arbitrates concurrent requests across API workers.
+    # The payload fingerprint prevents a reused key from silently binding to
+    # changed instructions/model parameters. Never persist raw message text
+    # in the claim record.
+    canonical = json.dumps(
+        payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    requests = ChatRequestRepository(session=session, tenant_ctx=tenant_ctx)
+    request, is_new = requests.claim(
+        conversation_id=conversation_id,
+        idempotency_key=idempotency_key,
+        request_digest=digest,
+    )
+    # COMMIT the claim before constructing the provider or running the model.
+    session.commit()
+    run_id = request.id
+    if not is_new:
+        response = {
+            "run_id": str(run_id),
+            "status": request.status,
+            "events_url": (
+                f"/chat/conversations/{conversation_id}/runs/{run_id}/events"
+            ),
+        }
+        status_code = 200 if request.status == "completed" else (
+            202 if request.status == "claimed" else 409
+        )
+        return JSONResponse(
+            status_code=status_code, content=response,
+            headers={"X-Run-ID": str(run_id), "Cache-Control": "no-store"},
+        )
+
+    try:
+        service = _service(
+            session=session, tenant_ctx=tenant_ctx, payload=payload, run_id=run_id
+        )
+    except Exception:
+        session.rollback()
+        requests.mark_failed(conversation_id=conversation_id, run_id=run_id)
+        session.commit()
+        raise
+
+    def _commit_completed_turn() -> None:
+        # Atomic with assistant message, citations and memory writeback task.
+        requests.complete(conversation_id=conversation_id, run_id=run_id)
+        session.commit()
+
+    service.deps.persist_turn = _commit_completed_turn
 
     async def _produce() -> None:
         try:
@@ -228,6 +279,12 @@ async def send_message(
             )
         except Exception:
             session.rollback()
+            try:
+                requests.mark_failed(conversation_id=conversation_id, run_id=run_id)
+                session.commit()
+            except Exception:
+                session.rollback()
+                # Never re-run ambiguous work after failure to acknowledge.
             await service.deps.sink.close()
             raise
 
