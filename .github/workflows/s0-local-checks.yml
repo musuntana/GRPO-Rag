@@ -1,9 +1,6 @@
 name: Full integration (manual)
 # Expensive PG + Qdrant + Poppler suite. NEVER trigger on push or PR synchronize.
 on:
-  push:
-    branches:
-      - feat/s1-qwen-real-pdf-smoke
   workflow_dispatch:
     inputs:
       reason:
