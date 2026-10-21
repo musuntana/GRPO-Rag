@@ -41,6 +41,40 @@ Results from different embedding revisions or source index versions cannot
 be attributed to reranking. Before promotion, run the same fully frozen
 comparison on a separately reviewed holdout split without tuning to it.
 
+### P0/P1: capture paired traces from ONE source recall
+
+`ragos.runtime.paired_trace_capture.capture_paired_page_traces` calls the
+existing approved, single-index `capture_page_ranking_trace` twice through a
+request-local, frozen cache: the first pass fetches actual PG-hydrated Dense
+results, the second reuses **the exact same candidates**, scores only the
+configured rerank depth, and appends the untouched tail. No second embedding
+or vector query is performed for the same question.
+
+The model callback receives only `(question, trusted candidate chunks,
+tenant_ctx)`, **never** an `EvalCase`, gold labels or holdout outcomes.
+It must be an authorized `RerankFn` supplied by the caller after model
+admission and budget checks; this utility does not itself admit any model or
+perform HTTP. The candidate must be a full permutation of the input head.
+The bridge checks immutable candidate metadata against a pre-call snapshot
+even if the underlying provider mutates input objects. Results are
+`PairedPageTraces(baseline bytes, candidate bytes, content-free comparison)`.
+
+```bash
+.venv/bin/pytest -q tests/test_paired_trace_capture.py \
+  tests/test_page_benchmark.py tests/test_page_trace_capture.py
+.venv/bin/ruff check packages/runtime/src/ragos/runtime/paired_trace_capture.py \
+  tests/test_paired_trace_capture.py
+```
+
+The test harness uses a deterministic in-memory fake Dense/Reranker transport;
+it is not evidence of actual Qwen model ranking, published PostgreSQL index
+readback or end-user citation quality. Actual source data must be captured by
+an operator with **active** approved PG/Qdrant publication and gateway-bound
+model callback. Raw returned baseline/candidate bytes contain questions and
+human labels: store securely; do not print/commit them. The comparison can
+be published only after reviewing dataset consent, deduplication and the
+model/index/version manifest.
+
 ### P1: mine *labelled and recalled* hard negative pairs
 
 The `mine` mode accepts **train-v2 only**. The v1 schema remains
