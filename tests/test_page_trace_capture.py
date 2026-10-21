@@ -233,3 +233,25 @@ def test_reject_fake_hydrated_page_identity_instead_of_optimistic_scoring() -> N
     with pytest.raises(ValidationError, match="unversioned"):
         _capture(ctx, plan, retriever, _profile(ctx), [_case(plan, ctx)])
     assert retriever.count == 1
+
+
+def test_approved_train_trace_is_separate_from_dev_and_holdout() -> None:
+    tenant_id, kb_id, doc_id, index_id = uuid4(), uuid4(), uuid4(), uuid4()
+    ctx = TenantContext(
+        tenant_id=tenant_id, tenant_slug="train", actor_id="reviewer",
+        trace_id="train-only-capture", allowed_kb_ids=[kb_id],
+    )
+    plan = SimpleNamespace(
+        tenant_id=tenant_id, kb_id=kb_id, document_id=doc_id,
+        index_id=index_id, page_count=2,
+        embedding_profile="test_profile", embedding_version="frozen-version",
+    )
+    case = _case(plan, ctx, split="train")
+    dense = _NeverCalledRetriever()
+    raw = _capture(ctx, plan, dense, _profile(ctx), [case], split="train")
+    manifest = json.loads(raw.splitlines()[0])
+    assert manifest["schema_version"] == 2
+    assert manifest["split"] == "train"
+    assert evaluate_trace_bytes(raw)["trace_format"] == "page-ranking-trace-train-v2"
+    assert dense.count == 1
+    assert json.loads(raw.splitlines()[1])["retrieved"] == []
