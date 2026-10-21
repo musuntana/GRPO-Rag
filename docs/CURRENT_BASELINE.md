@@ -1,6 +1,6 @@
 # 当前工程基线（唯一实时状态入口）
 
-**核对日期：2026-10-21。** 仓库：`musuntana/GRPO-Rag`；最新已核对主线为 `4e4bb1dc3136958eec48618f8cb1a0779544e51c`（PR #10 与 #11 已合并）。**最近两次相关完整 CI**：治理改动 [935 passed / Ruff / Alembic / PG+Qdrant](https://github.com/musuntana/GRPO-Rag/actions/runs/39590073676)；PR #10 的最终开发分支 [935 passed](https://github.com/musuntana/GRPO-Rag/actions/runs/39587738803)。**两者合并后的新 main 尚未另行执行完整 CI**：只有人工选择后才会运行，不把不同提交的通过结果当成同一个集成结果。后续事实以 GitHub 当前 `main` / Actions 为准。
+**核对日期：2026-10-21。** 仓库：`musuntana/GRPO-Rag`；最近的代码合并基线为 `4e4bb1dc3136958eec48618f8cb1a0779544e51c`（此后可能有纯文档提交）（PR #10 与 #11 已合并）。**最近两次相关完整 CI**：治理改动 [935 passed / Ruff / Alembic / PG+Qdrant](https://github.com/musuntana/GRPO-Rag/actions/runs/39590073676)；PR #10 的最终开发分支 [935 passed](https://github.com/musuntana/GRPO-Rag/actions/runs/39587738803)。**两者合并后的新 main 尚未另行执行完整 CI**：只有人工选择后才会运行，不把不同提交的通过结果当成同一个集成结果。后续事实以 GitHub 当前 `main` / Actions 为准。
 
 这是**主线和当前能力的汇总**，与某一次本地运行日志不同。历史实验日志仍保留在 `docs/validation/`；旧 `docs/project-progress.md` 是按时间记录的 S0 审计，不再作为“最新”来源。
 
