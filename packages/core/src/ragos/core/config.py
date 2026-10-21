@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from uuid import UUID
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,6 +33,15 @@ class Settings(BaseSettings):
     task_test_embedding: bool = False
     qdrant_url: str = ""
     valkey_url: str = "redis://localhost:6379"
+
+    # Explicit non-production LOCAL MODEL ONLY; disabled by default.
+    # No tenant-entered arbitrary model URLs or decrypted key-pool secrets.
+    local_model_enabled: bool = False
+    local_model_provider_id: UUID | None = None
+    local_model_base_url: str = ""
+    local_model_chat: str = ""
+    local_model_embed: str = ""
+    local_model_embed_dimension: int = Field(default=0, ge=0, le=8192)
 
     model_config = SettingsConfigDict(
         env_prefix="RAGOS_",
