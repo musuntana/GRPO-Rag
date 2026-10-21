@@ -106,7 +106,7 @@ def compare_page_traces(baseline_raw: bytes, candidate_raw: bytes) -> dict[str, 
 
 def mine_trace_pairs(raw: bytes, *, window: int = 50, related_cap: int = 4,
                      irrelevant_cap: int = 2) -> dict[str, Any]:
-    """Select *explicitly graded*, actually recalled dev examples only.
+    """Select *explicitly graded*, actually recalled train-v2 examples only.
 
     Relevance of an unlabelled retrieved page is unknown, never grade zero.
     A positive that was not recalled is a recall failure, not ranker training.
