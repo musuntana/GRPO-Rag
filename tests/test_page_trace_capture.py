@@ -127,6 +127,40 @@ def test_real_qdrant_postgres_produce_scored_page_trace(
         assert scored["metrics"]["recall_at_50"] == 1.0
         assert scored["evidence_kind"] == "offline_recorded_ranks_no_model_calls"
 
+        # Same authorized, published PG + Qdrant source, with a deterministic
+        # reranker callback. This is a transport check, NOT a real Qwen score.
+        from ragos.runtime.paired_trace_capture import capture_paired_page_traces
+
+        async def reversed_scores(_query, candidates, _ctx):
+            return [
+                replace(chunk, score=float(len(candidates) - rank))
+                for rank, chunk in enumerate(reversed(candidates))
+            ]
+
+        with scoped_session(database, fixture.ctx) as session:
+            dense = binding.dense(
+                reader, source=SearchRepository(session, fixture.ctx),
+                plan=fixture.plan, collection_prefix=prefix,
+            )
+            profile = _profile(fixture.ctx)
+            profile.rerank_model_profile = "ci-deterministic-stub"
+            paired = asyncio.run(
+                capture_paired_page_traces(
+                    tenant_ctx=fixture.ctx, plan=fixture.plan, dense=dense,
+                    profile=profile, cases=[case], split="holdout",
+                    dataset_id="synthetic-pdf-page-gold-v1",
+                    baseline_version="ci-frozen-dense",
+                    reranker_version="ci-deterministic-reranker",
+                    reranker_fn=reversed_scores,
+                )
+            )
+        assert paired.comparison["case_total"] == 1
+        assert paired.comparison["candidate"]["retriever_version"] == "ci-deterministic-reranker"
+        original = json.loads(paired.baseline.splitlines()[1])["retrieved"]
+        reranked = json.loads(paired.candidate.splitlines()[1])["retrieved"]
+        assert {x["page_no"] for x in original} == {x["page_no"] for x in reranked}
+        assert len(reranked) == len(original) == 4
+
         # A wrong (but page-in-bounds) gold is not used to steer the ranking.
         wrong = replace(case, gold_evidence=[
             GoldEvidence(doc_id=fixture.plan.document_id, page_no=2, grade=3)
