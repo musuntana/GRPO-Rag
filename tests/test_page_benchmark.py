@@ -130,3 +130,9 @@ def test_train_v2_is_separate_from_dev_holdout_v1() -> None:
     holdout[0]["schema_version"] = 2
     with pytest.raises(ValueError, match="v2"):
         evaluate_trace_bytes(_raw(holdout))
+
+
+def test_training_trace_cannot_be_used_as_reranker_quality_benchmark() -> None:
+    rows = _rows(split="train")
+    with pytest.raises(ValueError, match="dev/holdout v1"):
+        compare_page_traces(_raw(rows), _raw(rows))
