@@ -14,9 +14,11 @@
 | 模型 | OpenAI 兼容 Chat/Embedding 请求与响应解析、按需本机探测；冻结模型版号/向量维度 | 密钥可信解析、预算计量、生产租户 Provider admission；本机真实 Qwen 验收 |
 | 评估 | 页级去重、MRR@10/NDCG/Hit@6 口径、冻结 JSONL 离线报告与合成测试 | 带人工标注且审计的数据集上的真实 Recall/Hit/NDCG；语义引证一致性 |
 | 训练 | SFT 样本准备及 GRPO reward/排序辅助函数 | 真实 SFT/GRPO/LoRA 梯度更新、checkpoint、模型效果对照 |
-| 用户体验 | 若干后端与测试契约 | 生产签名鉴权/成员授权、可用 Web UI、完整 SSE 幂等重连 |
+| 用户体验 | 已合并 PR #12：聊天消息、SSE 日志使用同一个 run_id；已完成运行可在用户/会话授权后 GET 重放，POST 携带 Last-Event-ID 会被拒绝；其余后端测试契约 | 生产签名鉴权/成员授权、可用 Web UI、运行中跨进程 SSE 续传、无游标 POST 重试幂等 |
 
 **结论：S0 本地工程基线已通过；S1 是可测试的纵向工程切片，但没有达到真实企业 RAG 用户旅程的退出标准。**
+
+> **2026-10-21 增量（PR #12 已合并）**：聊天断线重连不再通过重新 POST 调用模型；现在有完成运行的会话授权 GET SSE 回放。该修复在 PR 分支的 [完整 CI #39593995266](https://github.com/musuntana/GRPO-Rag/actions/runs/39593995266) 上验证了 **946 passed**，且恢复了手动 CI 触发器；**未宣称此后 main 被自动重新测过**。完整流式在途恢复、持久请求幂等和 SQL 最终提交先于 run_finished 的时序问题仍待修复。
 
 ## 本轮治理内容
 
