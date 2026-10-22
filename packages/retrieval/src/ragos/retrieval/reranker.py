@@ -12,8 +12,9 @@ inferred from ranking quality.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from uuid import UUID
 
 from ragos.core.errors import ValidationError
@@ -24,6 +25,11 @@ from ragos.retrieval.types import RetrieverProfile, ScoredChunk
 #: trained reranker included (ADR-0007), so there is no code path from a
 #: retrieval feature to a model that bypasses the gateway.
 RerankFn = Callable[[str, list[ScoredChunk], TenantContext], Awaitable[list[ScoredChunk]]]
+
+# A reranker is a scoring/order adapter, never a source-of-truth for evidence.
+_FROZEN_RERANK_FIELDS = tuple(
+    field.name for field in fields(ScoredChunk) if field.name not in {"score", "rerank_score"}
+)
 
 
 @dataclass(slots=True)
@@ -89,7 +95,7 @@ async def rerank(
     depth = min(profile.top_k_rerank, len(chunks))
     head = list(chunks)[:depth]
 
-    if reranker is None or profile.rerank_model_profile is None:
+    if reranker is None or profile.rerank_model_profile is None or not head:
         return RerankResult(
             query=query,
             ranked=head,
@@ -97,45 +103,50 @@ async def rerank(
             depth=depth,
         )
 
-    ranked = await reranker(query, head, tenant_ctx)
-    originals = {c.chunk_id: c for c in head}
+    # Snapshot BEFORE the provider call. The adapter may mutate its input
+    # objects in-place; comparing against live 'head' would then bless the
+    # attacker's changed text/source coordinates as authoritative evidence.
+    originals = {chunk.chunk_id: replace(chunk) for chunk in head}
+    if len(originals) != len(head):
+        raise ValidationError("reranker input contains duplicate chunk identities")
+
+    # Give the untrusted adapter copies. A rejected in-place mutation must
+    # not poison the retrieval pipeline's caller-owned candidate objects.
+    provider_input = [replace(chunk) for chunk in head]
+    ranked = await reranker(query, provider_input, tenant_ctx)
+    if not isinstance(ranked, list):
+        raise ValidationError("reranker must return a list of ranked candidates")
+
+    marked: list[ScoredChunk] = []
+    seen: set[UUID] = set()
     for candidate in ranked:
+        if not isinstance(candidate, ScoredChunk):
+            raise ValidationError("reranker returned an invalid candidate")
         original = originals.get(candidate.chunk_id)
-        if original is None or (
-            candidate.source_identity,
-            candidate.source_text,
-            candidate.page_no,
-            candidate.start_char_idx,
-            candidate.end_char_idx,
-        ) != (
-            original.source_identity,
-            original.source_text,
-            original.page_no,
-            original.start_char_idx,
-            original.end_char_idx,
+        if original is None:
+            raise ValidationError("reranker returned a candidate outside the input set")
+        if candidate.chunk_id in seen:
+            raise ValidationError("reranker duplicated an input candidate")
+        if any(
+            getattr(candidate, name) != getattr(original, name)
+            for name in _FROZEN_RERANK_FIELDS
         ):
             raise ValidationError("reranker changed immutable evidence lineage")
-    marked = [
-        ScoredChunk(
-            chunk_id=c.chunk_id,
-            doc_id=c.doc_id,
-            kb_id=c.kb_id,
-            text=c.text,
-            score=c.score,
-            channel=c.channel,
-            layer=c.layer,
-            parent_chunk_id=c.parent_chunk_id,
-            page_no=c.page_no,
-            page_count=c.page_count,
-            start_char_idx=c.start_char_idx,
-            end_char_idx=c.end_char_idx,
-            element_type=c.element_type,
-            source_identity=c.source_identity,
-            source_text=c.source_text,
-            rerank_score=c.score,
-        )
-        for c in ranked
-    ]
+        if type(candidate.score) not in (int, float):
+            raise ValidationError("reranker score must be a finite number")
+        try:
+            score = float(candidate.score)
+        except OverflowError:
+            raise ValidationError("reranker score must be a finite number") from None
+        if not math.isfinite(score):
+            raise ValidationError("reranker score must be a finite number")
+        seen.add(candidate.chunk_id)
+        # Source data comes exclusively from the pre-call snapshot. The model
+        # may change only ordering and score, never text, identity or metadata.
+        marked.append(replace(original, score=score, rerank_score=score))
+    if len(seen) != len(head):
+        raise ValidationError("reranker omitted an input candidate")
+
     return RerankResult(
         query=query,
         ranked=marked,
