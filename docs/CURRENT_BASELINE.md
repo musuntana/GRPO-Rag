@@ -1,6 +1,6 @@
 # 当前工程基线（唯一实时状态入口）
 
-**核对日期：2026-10-21。** 仓库：`musuntana/GRPO-Rag`。本次确认的功能合并提交为 `c40d2983ae6518ef4f09e362a9a92fdfd9cca877`（PR #18；后续纯文档提交使 main SHA 继续变化）。最近相关完整回归：[PR #18 / 本地模型网关 985 passed，Ruff 与 Alembic 通过](https://github.com/musuntana/GRPO-Rag/actions/runs/39623355538)。验证在功能分支提交 `37e700f1` 上执行；合并前**仅恢复手动 CI 工作流配置**，没有修改通过测试的功能代码，合并后的 main 没有重复运行完整 CI。历史 S0–S1 运行可在 [Actions](https://github.com/musuntana/GRPO-Rag/actions) 核对，不把合成模型响应测试宣传为真实 Qwen 效果。
+**核对日期：2026-10-22。** 仓库：`musuntana/GRPO-Rag`；本轮代码合并基线 `8f7be869be6d5e3b955001d8eca761e8f7dd644a`（PR #20、#21 先后合并，之后如有文档提交，以 GitHub 当前 main 为准）。[一次性最新 HEAD 验证 #39757149966](https://github.com/musuntana/GRPO-Rag/actions/runs/39757149966) 分别检出 #20 `096a12a`（Ruff + **61 passed**）和 #21 `44aa2e2`（Ruff + **54 passed**），其最新源码组合在隔离验证分支 `f59473c` 通过 **1053 pytest / Ruff / PostgreSQL 18 / Qdrant 1.19.1 / Poppler / Alembic**。成功状态属于该隔离验证提交，并非两个 PR 各自最新 SHA 的原生 Full required check；静态代码复核已作为 COMMENT review 留在各 PR。**没有真实 Qwen 权重、人工审核的 dev/holdout 或生产预算与计费验收。**
 
 这是**主线和当前能力的汇总**，与某一次本地运行日志不同。历史实验日志仍保留在 `docs/validation/`；旧 `docs/project-progress.md` 是按时间记录的 S0 审计，不再作为“最新”来源。
 
@@ -12,8 +12,8 @@
 | 索引 | PostgreSQL 冻结表示与索引计划、任务租约/CAS 发布、Qdrant 读回对账 | 持久 Qdrant **服务器重启**与备份恢复、企业正式上传 |
 | 检索 | Qdrant HTTP 重连、租户过滤、PG 激活/对账证据回填及源身份核验；PR #19 在开发环境接通本地 ModelRouter Embedding Dense 查询，并加入 SQL 冻结索引版本过滤 | 实际 Qwen 权重的全文索引重建、生产授权/计量网关、真实用户问答与跨文档语义评估 |
 | 模型 | OpenAI 兼容 Chat/Embedding、本机真实 PDF 验收 CLI、冻结向量维度；PR #18 增加仅在显式开启且 API 绑定回环地址时可用的租户绑定本地 Chat/Embedding ModelRouter | 真实 Qwen 权重及效果未在 CI 验收；生产密钥可信解析、预算计量与授权 Provider 准入、真实 Dense–PG 证据全链路 |
-| 评估 | 页级去重、MRR@10/NDCG/Hit@6 口径、冻结 JSONL 离线报告与合成测试 | 带人工标注且审计的数据集上的真实 Recall/Hit/NDCG；语义引证一致性 |
-| 训练 | SFT 样本准备及 GRPO reward/排序辅助函数 | 真实 SFT/GRPO/LoRA 梯度更新、checkpoint、模型效果对照 |
+| 评估 | 页级去重、MRR@10/NDCG/Hit@6、冻结 JSONL；PR #21 已加入严格配对页级 A/B、精确 Chunk 多重集守恒、train-v2 与 dev/holdout-v3 隔离、仅显式标注训练负例挖掘、租户授权 Rerank 网关及合成回归 | 真实人工审计 train/dev/holdout 数据与真实 Qwen 重排序实验；Recall@50/Hit@6/NDCG、延迟与成本；语义引证一致性 |
+| 训练 | 训练用的明确页级 grade-3 正例、grade-1/0 负例挖掘契约与 SFT/GRPO 辅助函数；训练集不得混入 dev/holdout | 人工校验标注来源、真实 SFT/GRPO/LoRA 反向传播、checkpoint 与独立 holdout 结果 |
 | 用户体验 | PR #12–#14：聊天 SSE 统一 run_id、已完成运行授权 GET 回放、SQL 提交先于终态 SSE、POST 同键持久幂等（迁移 0013） | 生产签名鉴权/成员授权、可用 Web UI、运行中跨进程 SSE 续传、丢失生产者后的安全恢复与真实计费核验 |
 
 **结论：S0 本地工程基线已通过；S1 是可测试的纵向工程切片，但没有达到真实企业 RAG 用户旅程的退出标准。**
@@ -32,11 +32,13 @@
 
 > **2026-10-21 增量（PR #19 已合并）**：正式检索构造器在明确的开发环境/本地 ModelRouter 准入下，支持将冻结身份的 Qwen Embedding 查询向量送入 Qdrant Dense Recall；结果继续通过 PostgreSQL `active_index_id`、`indexed`、PG/向量 digest 对账及不可变源身份校验，**新增与查询模型完全匹配的 `ChunkManifest.embedding_profile` 和 `embedding_version` 回填条件**。开发分支功能代码在 [CI #39626426003](https://github.com/musuntana/GRPO-Rag/actions/runs/39626426003) 验证 **987 passed**、Ruff/Alembic 通过。采用独立一次性 CI 分支，之后强制恢复该分支到仅手动工作流，PR #19 本身不包含 CI 改动。该测试实际使用 PostgreSQL/Qdrant/Poppler，但 Embedding 响应为确定性模拟；未验证 Mac 上实际 Qwen 权重，也未实现通用企业 PDF 上传与真实向量重建。此轮无迁移，使用说明见 [S1 冻结 Dense/PG 对账](validation/s1-dev-frozen-dense-pg-recall-2026-10-21.md)。
 
+> **2026-10-22 增量（PR #20、#21 已合并）**：#20 对 Reranker 输入证据做隔离快照，严查不可变文本、源坐标、Chunk ID 全排列和有限排序分数；#21 支持冻结同一 PG/Qdrant 召回候选的配对排序与页级评估，保护未标注页面不被误认为负例，训练 trace 与 dev/holdout 强隔离，所有模型评分经已有租户授权 ModelRouter。最新 #20、#21 代码分别在一次性 CI 中定向完成 **61 / 54 passed**，最终组合 **1053 passed**；参考 [run #39757149966](https://github.com/musuntana/GRPO-Rag/actions/runs/39757149966)，**不能写成每个 PR 最新 HEAD 都有独立 Full required check**。两 PR 均有源码审查 COMMENT，并按 #20→#21 顺序合并。#21 不暗示 Docker Model Runner 已提供真实 rerank API，当前仍需 Mac 上验证成熟 CrossEncoder 服务/模型及真正数据集。追踪阻塞见 [Issue #22](https://github.com/musuntana/GRPO-Rag/issues/22)。
+
 ## 本轮治理内容
 
 - `push` 与 `pull_request` 在旧 workflow 同时触发完整 CI，容易为一次代码修改重复记账。统一改为 **手动 `workflow_dispatch`**：`Quick checks (manual)` 和 `Full integration (manual)`。不满足自动强制合并门槛时，由 reviewer 核对 **最新 HEAD 与手动 CI 结果一致**，不可盲信旧 run；团队如需 required status checks 应单独调整 GitHub 分支保护。
 - `FrozenEmbeddingSpec.version` 把 **向量维度** 也纳入 Qdrant 物理空间身份，防止相同模型名称/权重标识但尺寸不同的向量共用旧索引。这是身份版本迁移：开发环境的旧集合保留，只能影子重建/对账，**禁止原地混写或删生产数据**。
-- 旧分支曾按 GitHub `compare main...head` 检查，9 条历史 `feat/*` / `fix/*` / `test/*` 分支 `ahead_by=0`，相关 PR 均已合并。最新分支搜索仅返回 `main`、`chore/ci-on-demand-and-baseline-hygiene`、`feat/s1-authorized-page-ranking-capture` 这 3 条；PR #10 和 PR #11 均已 merged，因此这两条也是候选，但脚本目前只自动识别 `feat/` / `fix/` / `test/` 前缀，`chore/` 仍需在 GitHub 分支页面手动删除。当前只部署了默认 dry-run 的 `Prune merged branches` 入口，**不宣称是本次操作删除了远程历史分支**。
+- 历史分支清理仍需**操作员显式 dry-run 和确认**。截至 2026-10-22，远端仍存在多条已合并的 `feat/*`/`fix/*` 分支、一次性 `test/*` 验证分支及 `chore/*`；源码合并不等于删除远端分支。现有手动 `Prune merged branches` 只处理受规则保护的 `feat/*`/`fix/*`/`test/*`，`chore/*` 需人工检查；先保留本轮 CI SHA 的审计链接，再清理引用，切勿删除 main 或活跃 PR。
 
 ## 唯一后续技术优先级
 
