@@ -86,6 +86,7 @@ def test_mining_requires_graded_retrieved_negatives_and_recalled_positive() -> N
     assert result["pairs"][0]["negative_rank"] == 1
     assert result["pairs"][0]["positive_rank"] == 3
     assert result["unlabeled_retrieved_pages_ignored"] == 1
+    assert result["label_review_status"] == "not_attested_by_train_v2"
     assert all(p["negative_doc_id"] != "unknown" for p in result["pairs"])
 
 
