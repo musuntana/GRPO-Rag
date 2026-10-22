@@ -132,12 +132,17 @@ async def rerank(
             for name in _FROZEN_RERANK_FIELDS
         ):
             raise ValidationError("reranker changed immutable evidence lineage")
-        if type(candidate.score) not in (int, float) or not math.isfinite(candidate.score):
+        if type(candidate.score) not in (int, float):
+            raise ValidationError("reranker score must be a finite number")
+        try:
+            score = float(candidate.score)
+        except OverflowError:
+            raise ValidationError("reranker score must be a finite number") from None
+        if not math.isfinite(score):
             raise ValidationError("reranker score must be a finite number")
         seen.add(candidate.chunk_id)
         # Source data comes exclusively from the pre-call snapshot. The model
         # may change only ordering and score, never text, identity or metadata.
-        score = float(candidate.score)
         marked.append(replace(original, score=score, rerank_score=score))
     if len(seen) != len(head):
         raise ValidationError("reranker omitted an input candidate")
