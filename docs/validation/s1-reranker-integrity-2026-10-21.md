@@ -13,7 +13,9 @@ against mutable originals *after* the external call.
 When a real rerank profile is configured, a model response must be an **exact
 permutation** of the input head: no omissions, unknown IDs or duplicates.
 Immutable `ScoredChunk` fields are snapshotted **before** the external call
-and compared afterwards. Only rank order and a finite numerical score may
+and compared afterwards. The untrusted provider receives *copies*, so an
+in-place mutation must not alter caller-owned source evidence even when the
+provider response is rejected. Only rank order and a finite numerical score may
 change; scored output is rebuilt from the trusted snapshot and exposes
 `rerank_score` explicitly. Empty candidate lists never call the provider.
 
