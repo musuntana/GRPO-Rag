@@ -110,7 +110,10 @@ async def rerank(
     if len(originals) != len(head):
         raise ValidationError("reranker input contains duplicate chunk identities")
 
-    ranked = await reranker(query, head, tenant_ctx)
+    # Give the untrusted adapter copies. A rejected in-place mutation must
+    # not poison the retrieval pipeline's caller-owned candidate objects.
+    provider_input = [replace(chunk) for chunk in head]
+    ranked = await reranker(query, provider_input, tenant_ctx)
     if not isinstance(ranked, list):
         raise ValidationError("reranker must return a list of ranked candidates")
 
