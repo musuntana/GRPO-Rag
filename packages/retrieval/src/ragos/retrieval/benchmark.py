@@ -179,7 +179,7 @@ def mine_trace_pairs(raw: bytes, *, window: int = 50, related_cap: int = 4,
         "unlabeled_retrieved_pages_ignored": unlabeled_pages,
         "related_pairs": sum(item["negative_grade"] == 1 for item in pairs),
         "irrelevant_pairs": sum(item["negative_grade"] == 0 for item in pairs),
-        "label_review_status": "not_attested_by_trace_v1",
+        "label_review_status": "not_attested_by_train_v2",
         "pairs": pairs,
     }
 
