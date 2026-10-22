@@ -87,6 +87,9 @@ def test_paired_rerank_measures_same_universe_and_reports_no_text() -> None:
     lambda rows: rows[1]["retrieved"][0].update({"doc_id": "foreign"}),
     # Same page coordinates but a different chunk must not pass a paired comparison.
     lambda rows: rows[1]["retrieved"][0].update({"chunk_id": str(uuid4())}),
+    lambda rows: rows[1]["retrieved"][1].update({
+        "chunk_id": rows[1]["retrieved"][0]["chunk_id"]
+    }),
     lambda rows: rows[1].update({"case_id": str(uuid4())}),
 ])
 def test_comparison_refuses_identity_gold_or_candidate_change(edit) -> None:
