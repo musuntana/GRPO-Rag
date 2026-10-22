@@ -88,7 +88,11 @@ def _verified_ranked_pages(
             or hit.source_text != hit.text
         ):
             raise ValidationError("ranked evidence is not the frozen published PDF source")
-        ranked.append({"doc_id": str(identity.document_id), "page_no": hit.page_no})
+        ranked.append({
+            "doc_id": str(identity.document_id),
+            "page_no": hit.page_no,
+            "chunk_id": str(identity.chunk_id),
+        })
     return ranked
 
 
@@ -138,7 +142,7 @@ async def capture_page_ranking_trace(
 
     manifest = {
         "type": "manifest",
-        "schema_version": 2 if split == "train" else 1,
+        "schema_version": 2 if split == "train" else 3,
         "dataset_id": dataset_id,
         "tenant_id": str(tenant_ctx.tenant_id),
         "split": split,

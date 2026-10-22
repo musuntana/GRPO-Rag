@@ -3,9 +3,9 @@
 ## Purpose and scope
 
 This increment adds deterministic **offline** experiment handling after the already
-implemented authorized PG/Qdrant page-trace capture. Approved train cases
-are captured with a separate v2 manifest; existing dev/holdout v1 files
-remain unchanged. It does not connect the user's
+implemented authorized PG/Qdrant page-trace capture. Approved train cases use the separate v2 manifest. Existing dev/holdout v1
+traces remain readable for offline scoring, but strict paired A/B requires
+newly captured dev/holdout v3 traces with per-candidate chunk IDs. It does not connect the user's
 Mac Docker Model Runner, run actual Qwen weights, provide customer gold labels,
 train an SFT/GRPO policy, or attest citations. It does not change database schemas
 or CI triggers.
@@ -13,18 +13,21 @@ or CI triggers.
 ### P0: compare Dense baseline and reranker fairly
 
 `ragos.retrieval.benchmark.compare_page_traces` validates each file using the
-existing frozen `page-ranking-trace-v1` evaluator, then fails closed unless:
+strict `page-ranking-trace-v3` evaluator, then fails closed unless:
 - dataset, tenant, split, published index, embedding profile and revision agree;
 - case IDs, **actual question text**, page-level gold labels and grades agree;
 - both retrieval runs contain the same **multiset** of raw ranked
-  `(doc_id,page_no)` Chunk identities: duplicates and their counts must match,
-  not just the unique page set. Only ordering may change (not recall).
+  `(doc_id,page_no,chunk_id)` identities: each chunk ID must be a UUID,
+  duplicate chunk IDs are rejected, and exact chunk/page multiplicities must
+  match. Legacy v1 traces lack chunk IDs and are rejected by paired A/B.
+  Only ordering may change (not recall).
 
 Only `retriever_version` and candidate rank order may change. This isolates the
-effect of **reranking** from recall/index drift. It returns the existing shared
+effect of **reranking** from recall/index drift. Legacy v1 traces remain available
+for offline scoring but cannot establish exact paired candidate identity. It returns the existing shared
 metrics (Recall@5/10/50, Precision@10, NDCG@10, MRR@10, Hit@6), their deltas and
 per-question Hit@6 win/loss/tie counts. The report contains trace SHA-256, not
-questions or source document text. `trace-v1` alone cannot attest that gold was
+questions or source document text. `trace-v3` still cannot attest that gold was
 human-reviewed: the report explicitly marks this caveat.
 
 Run on a developer host with locally authorized private traces:
@@ -37,7 +40,7 @@ uv sync --frozen --no-editable --extra dev --python 3.12
 ```
 
 A reranked trace must be captured using the **same original source candidate
-pages** and the existing schema, not invented by sorting according to gold.
+chunks** and the v3 identity-bearing schema, not invented by sorting according to gold.
 Results from different embedding revisions or source index versions cannot
 be attributed to reranking. Before promotion, run the same fully frozen
 comparison on a separately reviewed holdout split without tuning to it.
@@ -112,8 +115,9 @@ Tests in `tests/test_gateway_rerank.py` inject only a fake provider.
 
 ### P1: mine *labelled and recalled* hard negative pairs
 
-The `mine` mode accepts **train-v2 only**. The v1 schema remains
-restricted to dev/holdout, while approved authorized train cases use v2. It scores the actual de-duplicated first
+The `mine` mode accepts **train-v2 only**. Legacy v1 remains readable for
+dev/holdout scoring; new captures use identity-bearing v3 for dev/holdout, while
+approved authorized train cases continue to use v2. It scores the actual de-duplicated first
 50 pages in each question, emits positive grade-3 + negative grade-1/0 pairs
 only if both pages were explicitly labelled *and* the positive was recalled.
 Unlabelled retrieved pages and grade-2 ambiguous pages **never become negatives**.
@@ -163,8 +167,9 @@ label coverage is insufficient, **not** that a model has zero errors.
 
 ## Rollback and evidence
 
-Revert this PR to remove the optional CLI, tests and train-v2 support; existing
-v1 dev/holdout semantics remain unchanged. Nothing is
+Revert this PR to remove the optional CLI, tests and train-v2 support; legacy
+v1 dev/holdout scoring semantics remain unchanged, but strict paired comparison
+requires v3 and rejects legacy v1. Nothing is
 written to existing PG rows, Qdrant collections, secrets or model artifacts.
 Targeted tests and one manual (not push-triggered) Quick check must succeed
 on the exact final PR HEAD before merging. `main` must not be called verified

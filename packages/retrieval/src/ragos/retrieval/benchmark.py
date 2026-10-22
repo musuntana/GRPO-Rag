@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from ragos.retrieval.metrics import Grade, hit_at_k, unique_evidence
-from ragos.retrieval.offline_eval import evaluate_trace_bytes
+from ragos.retrieval.offline_eval import PAIRED_FORMAT_VERSION, evaluate_trace_bytes
 from ragos.retrieval.types import GoldEvidence
 
 _FROZEN_FIELDS = (
@@ -51,10 +51,13 @@ def compare_page_traces(baseline_raw: bytes, candidate_raw: bytes) -> dict[str, 
     baseline, first = _load(baseline_raw)
     candidate, second = _load(candidate_raw)
     if (
-        baseline["trace_format"] != "page-ranking-trace-v1"
-        or candidate["trace_format"] != "page-ranking-trace-v1"
+        baseline["trace_format"] != PAIRED_FORMAT_VERSION
+        or candidate["trace_format"] != PAIRED_FORMAT_VERSION
     ):
-        raise ValueError("paired ranking evaluation requires dev/holdout v1, never train-v2")
+        raise ValueError(
+            "paired ranking evaluation requires dev/holdout page-ranking-trace-v3 "
+            "with chunk IDs; legacy v1 and train-v2 are not accepted"
+        )
     if any(baseline[key] != candidate[key] for key in _FROZEN_FIELDS):
         raise ValueError("paired traces must share frozen dataset, index, model and split")
     if first.keys() != second.keys():
@@ -74,13 +77,15 @@ def compare_page_traces(baseline_raw: bytes, candidate_raw: bytes) -> dict[str, 
         # Unique page-set equality alone misses deleted duplicate child chunks
         # on the same PDF page and can distort page-level rank positions.
         prior_chunks = Counter(
-            (item["doc_id"], item["page_no"]) for item in prior["retrieved"]
+            (item["doc_id"], item["page_no"], item["chunk_id"])
+            for item in prior["retrieved"]
         )
         next_chunks = Counter(
-            (item["doc_id"], item["page_no"]) for item in next_case["retrieved"]
+            (item["doc_id"], item["page_no"], item["chunk_id"])
+            for item in next_case["retrieved"]
         )
         if prior_chunks != next_chunks:
-            raise ValueError("paired reranker changed recalled page/chunk multiplicity")
+            raise ValueError("paired reranker changed recalled chunk identity multiset")
         if set(prior_units) != set(next_units):
             raise ValueError("paired reranker changed the recalled page universe")
         gold = [GoldEvidence(**item) for item in prior["gold"]]
@@ -117,7 +122,8 @@ def compare_page_traces(baseline_raw: bytes, candidate_raw: bytes) -> dict[str, 
             for key, before in baseline["metrics"].items()
         },
         "hit_at_6_case_outcomes": {"improved": wins, "regressed": losses, "tied": ties},
-        "label_review_status": "not_attested_by_trace_v1",
+        "candidate_identity_contract": "exact_chunk_id_and_page_v3",
+        "label_review_status": "not_attested_by_trace_v3",
     }
 
 

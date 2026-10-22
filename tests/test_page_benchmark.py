@@ -14,7 +14,7 @@ from ragos.retrieval.benchmark import compare_page_traces, main, mine_trace_pair
 def _rows(*, split: str = "dev") -> list[dict]:
     return [
         {
-            "type": "manifest", "schema_version": 2 if split == "train" else 1,
+            "type": "manifest", "schema_version": 2 if split == "train" else 3,
             "dataset_id": "synthetic-paired-v1",
             "tenant_id": str(uuid4()), "index_id": str(uuid4()),
             "split": split, "embedding_profile": "synthetic_only",
@@ -30,11 +30,26 @@ def _rows(*, split: str = "dev") -> list[dict]:
                 {"doc_id": "other", "page_no": 3, "grade": 0},
             ],
             "retrieved": [
-                {"doc_id": "contract", "page_no": 8},
-                {"doc_id": "contract", "page_no": 8},
-                {"doc_id": "other", "page_no": 3},
-                {"doc_id": "contract", "page_no": 7},
-                {"doc_id": "unknown", "page_no": 11},
+                {
+                    "doc_id": "contract", "page_no": 8,
+                    **({"chunk_id": str(uuid4())} if split != "train" else {}),
+                },
+                {
+                    "doc_id": "contract", "page_no": 8,
+                    **({"chunk_id": str(uuid4())} if split != "train" else {}),
+                },
+                {
+                    "doc_id": "other", "page_no": 3,
+                    **({"chunk_id": str(uuid4())} if split != "train" else {}),
+                },
+                {
+                    "doc_id": "contract", "page_no": 7,
+                    **({"chunk_id": str(uuid4())} if split != "train" else {}),
+                },
+                {
+                    "doc_id": "unknown", "page_no": 11,
+                    **({"chunk_id": str(uuid4())} if split != "train" else {}),
+                },
             ],
         },
     ]
@@ -58,7 +73,8 @@ def test_paired_rerank_measures_same_universe_and_reports_no_text() -> None:
     assert result["delta_candidate_minus_baseline"]["ndcg_at_10"] > 0
     assert result["hit_at_6_case_outcomes"]["tied"] == 1
     assert "Where is the warranty?" not in json.dumps(result)
-    assert result["label_review_status"] == "not_attested_by_trace_v1"
+    assert result["label_review_status"] == "not_attested_by_trace_v3"
+    assert result["candidate_identity_contract"] == "exact_chunk_id_and_page_v3"
 
 
 @pytest.mark.parametrize("edit", [
@@ -69,6 +85,8 @@ def test_paired_rerank_measures_same_universe_and_reports_no_text() -> None:
     lambda rows: rows[1]["retrieved"].pop(),
     lambda rows: rows[1]["retrieved"].pop(1),  # same unique pages, wrong child count
     lambda rows: rows[1]["retrieved"][0].update({"doc_id": "foreign"}),
+    # Same page coordinates but a different chunk must not pass a paired comparison.
+    lambda rows: rows[1]["retrieved"][0].update({"chunk_id": str(uuid4())}),
     lambda rows: rows[1].update({"case_id": str(uuid4())}),
 ])
 def test_comparison_refuses_identity_gold_or_candidate_change(edit) -> None:
@@ -118,7 +136,7 @@ def test_cli_writes_private_non_overwriting_json(tmp_path: Path) -> None:
     assert main(["mine", str(source), "--output", str(output)]) == 2
 
 
-def test_train_v2_is_separate_from_dev_holdout_v1() -> None:
+def test_train_v2_is_separate_from_dev_holdout_v3() -> None:
     from ragos.retrieval.offline_eval import evaluate_trace_bytes
 
     train = _rows(split="train")
@@ -129,6 +147,7 @@ def test_train_v2_is_separate_from_dev_holdout_v1() -> None:
     with pytest.raises(ValueError, match="v1"):
         evaluate_trace_bytes(_raw(train))
     holdout = _rows(split="holdout")
+    assert holdout[0]["schema_version"] == 3
     holdout[0]["schema_version"] = 2
     with pytest.raises(ValueError, match="v2"):
         evaluate_trace_bytes(_raw(holdout))
@@ -136,11 +155,11 @@ def test_train_v2_is_separate_from_dev_holdout_v1() -> None:
 
 def test_training_trace_cannot_be_used_as_reranker_quality_benchmark() -> None:
     rows = _rows(split="train")
-    with pytest.raises(ValueError, match="dev/holdout v1"):
+    with pytest.raises(ValueError, match="page-ranking-trace-v3"):
         compare_page_traces(_raw(rows), _raw(rows))
 
 
-def test_paired_rerank_allows_duplicate_chunk_reorder_when_counts_match() -> None:
+def test_paired_rerank_allows_chunk_reorder_when_identity_multiset_matches() -> None:
     rows = _rows()
     ranked = deepcopy(rows)
     ranked[0]["retriever_version"] = "reranked-v1"

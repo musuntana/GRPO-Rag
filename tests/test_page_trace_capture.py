@@ -111,11 +111,13 @@ def test_real_qdrant_postgres_produce_scored_page_trace(
             )
         record = [json.loads(line) for line in captured.splitlines()]
         assert record[0]["index_id"] == str(fixture.plan.index_id)
+        assert record[0]["schema_version"] == 3
         assert record[0]["embedding_version"] == fixture.plan.embedding_version
         assert record[1]["gold"] == [{
             "doc_id": str(fixture.plan.document_id), "page_no": 1, "grade": 3
         }]
         assert len(record[1]["retrieved"]) == 4
+        assert len({item["chunk_id"] for item in record[1]["retrieved"]}) == 4
         assert {item["page_no"] for item in record[1]["retrieved"]} == {1, 2}
         assert "Contract warranty period is 24 months." in case.question
         assert "retained deposit is 5 percent" not in captured.decode()

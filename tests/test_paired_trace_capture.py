@@ -101,6 +101,16 @@ def test_captures_exactly_one_dense_pass_and_matching_source_universe():
     assert result.comparison["delta_candidate_minus_baseline"]["ndcg_at_10"] > 0
     assert result.comparison["case_total"] == 1
     assert "warranty" not in json.dumps(result.comparison)
+    assert result.comparison["candidate_identity_contract"] == "exact_chunk_id_and_page_v3"
+    baseline_ids = sorted(
+        item["chunk_id"]
+        for item in json.loads(result.baseline.splitlines()[1])["retrieved"]
+    )
+    candidate_ids = sorted(
+        item["chunk_id"]
+        for item in json.loads(result.candidate.splitlines()[1])["retrieved"]
+    )
+    assert baseline_ids == candidate_ids
 
 
 @pytest.mark.parametrize("tamper", ["missing", "duplicate", "text", "in_place"])
