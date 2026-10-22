@@ -211,11 +211,16 @@ class GatewayRerankAdapter:
                 or type(entry.index) is not int or entry.index in seen
                 or not 0 <= entry.index < len(chunks)
                 or type(entry.score) not in (int, float)
-                or not math.isfinite(entry.score)
             ):
                 raise ProviderError("Rerank gateway returned invalid scores or indices")
+            try:
+                score = float(entry.score)
+            except OverflowError:
+                raise ProviderError("Rerank gateway returned invalid scores or indices") from None
+            if not math.isfinite(score):
+                raise ProviderError("Rerank gateway returned invalid scores or indices")
             seen.add(entry.index)
-            scores.append((entry.index, float(entry.score)))
+            scores.append((entry.index, score))
         scores.sort(key=lambda item: (-item[1], item[0]))
         return [replace(chunks[index], score=score) for index, score in scores]
 
