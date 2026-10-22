@@ -62,15 +62,15 @@ def _chunks():
 
 def test_tenant_router_reranks_and_adapter_keeps_original_source(monkeypatch):
     provider, calls = _provider([
-        RerankEntry(index=1, score=0.2),
-        RerankEntry(index=0, score=0.95),
+        RerankEntry(index=1, score=0.95),
+        RerankEntry(index=0, score=0.2),
     ])
     router = _router(monkeypatch, provider)
     chunks = _chunks()
     result = asyncio.run(GatewayRerankAdapter(router)("warranty?", chunks, _ctx()))
-    assert [x.chunk_id for x in result] == [chunks[0].chunk_id, chunks[1].chunk_id]
+    assert [x.chunk_id for x in result] == [chunks[1].chunk_id, chunks[0].chunk_id]
     assert [x.score for x in result] == [0.95, 0.2]
-    assert [x.text for x in result] == [x.text for x in chunks]
+    assert [x.text for x in result] == [chunks[1].text, chunks[0].text]
     assert [x.score for x in chunks] == [0.1, 0.9]
     assert calls == [("warranty?", [x.text for x in chunks], "fixture-rerank", {})]
 
