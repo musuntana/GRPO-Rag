@@ -16,8 +16,9 @@ or CI triggers.
 existing frozen `page-ranking-trace-v1` evaluator, then fails closed unless:
 - dataset, tenant, split, published index, embedding profile and revision agree;
 - case IDs, **actual question text**, page-level gold labels and grades agree;
-- both retrieval runs contain precisely the same set of unique
-  `(doc_id,page_no)` candidates for every case (ranking may change; recall may not).
+- both retrieval runs contain the same **multiset** of raw ranked
+  `(doc_id,page_no)` Chunk identities: duplicates and their counts must match,
+  not just the unique page set. Only ordering may change (not recall).
 
 Only `retriever_version` and candidate rank order may change. This isolates the
 effect of **reranking** from recall/index drift. It returns the existing shared
