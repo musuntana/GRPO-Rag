@@ -16,10 +16,13 @@ process, which is the kind of defect that only appears under load.
 from __future__ import annotations
 
 import asyncio
+import math
+from dataclasses import replace
 from typing import Any, Protocol
 
 from ragos.core.errors import ProviderError, ValidationError
 from ragos.core.tenant import TenantContext
+from ragos.model_gateway.providers import RerankEntry
 from ragos.retrieval.types import ScoredChunk
 
 
@@ -43,6 +46,15 @@ class RouterLike(Protocol):
         use_case: str = "embed",
         profile_override: Any | None = None,
     ) -> Any: ...
+
+    def rerank(
+        self,
+        tenant_ctx: TenantContext,
+        *,
+        query: str,
+        documents: list[str],
+        profile_override: Any | None = None,
+    ) -> list[RerankEntry]: ...
 
 
 class GatewayComplete:
@@ -139,6 +151,73 @@ class GatewayEmbedder:
             return list(result.embeddings[0])
 
         return await asyncio.to_thread(call)
+
+
+
+class GatewayRerankAdapter:
+    """Bridge tenant-bound provider scores to the immutable retrieval seam.
+
+    No new transport or model route is inferred: the ModelRouter must authorize
+    a true 'rerank' binding. Docker Model Runner does not imply a /reranks API.
+    Deployment needs audited provider/budget admission and cost attribution.
+    """
+
+    def __init__(
+        self,
+        router: RouterLike,
+        *,
+        max_candidates: int = 50,
+        max_total_chars: int = 160000,
+    ) -> None:
+        if (
+            type(max_candidates) is not int or not 1 <= max_candidates <= 50
+            or type(max_total_chars) is not int or not 1 <= max_total_chars <= 160000
+        ):
+            raise ValidationError("Invalid gateway reranker candidate/text budget")
+        self.router = router
+        self.max_candidates = max_candidates
+        self.max_total_chars = max_total_chars
+
+    async def __call__(
+        self,
+        query: str,
+        chunks: list[ScoredChunk],
+        tenant_ctx: TenantContext,
+    ) -> list[ScoredChunk]:
+        if not chunks:
+            return []
+        if (
+            type(query) is not str or not 0 < len(query) <= 4000
+            or len(chunks) > self.max_candidates
+            or any(type(chunk.text) is not str or not chunk.text for chunk in chunks)
+            or sum(len(chunk.text) for chunk in chunks) > self.max_total_chars
+        ):
+            raise ValidationError("Reranker input exceeds the authorized passage budget")
+
+        # No provider call from retrieval. ModelRouter checks tenant/use_case
+        # binding and dispatches its explicitly supported rerank protocol.
+        results = await asyncio.to_thread(
+            lambda: self.router.rerank(
+                tenant_ctx, query=query, documents=[chunk.text for chunk in chunks]
+            )
+        )
+        if not isinstance(results, list) or len(results) != len(chunks):
+            raise ProviderError("Rerank gateway returned an incomplete candidate set")
+        seen: set[int] = set()
+        scores: list[tuple[int, float]] = []
+        for entry in results:
+            if (
+                not isinstance(entry, RerankEntry)
+                or type(entry.index) is not int or entry.index in seen
+                or not 0 <= entry.index < len(chunks)
+                or type(entry.score) not in (int, float)
+                or not math.isfinite(entry.score)
+            ):
+                raise ProviderError("Rerank gateway returned invalid scores or indices")
+            seen.add(entry.index)
+            scores.append((entry.index, float(entry.score)))
+        scores.sort(key=lambda item: (-item[1], item[0]))
+        return [replace(chunks[index], score=score) for index, score in scores]
 
 
 class GatewayJudge:
