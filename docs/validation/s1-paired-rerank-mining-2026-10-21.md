@@ -75,6 +75,40 @@ human labels: store securely; do not print/commit them. The comparison can
 be published only after reviewing dataset consent, deduplication and the
 model/index/version manifest.
 
+### Provider scoring through the existing tenant ModelRouter
+
+The previous provider interface already defined `BaseProvider.rerank` and
+`OpenAICompatibleProvider.rerank` for an **optional** /v1/reranks HTTP route.
+This patch adds `ModelRouter.rerank(ctx, query, documents)` and the
+`GatewayRerankAdapter(router)` callable, so an approved tenant
+`use_case='rerank'` binding can supply the `RerankFn` consumed by
+`capture_paired_page_traces(..., reranker_fn=GatewayRerankAdapter(router))`.
+There is no new custom scoring algorithm or untrusted provider URL.
+
+The router enforces a nonempty <=4000 character question, 1-50 nonempty
+passages <=16k characters each and <=160k characters total, before resolving
+the tenant's model binding; it validates a complete, non-repeated set of
+finite scores indexed by the original request ordering. The async adapter
+runs the synchronous gateway call outside the event loop, sorts scores
+deterministically, and reconstructs `ScoredChunk` records solely from original
+input evidence. The separate online reranker contract (#20) remains the
+authoritative evidence integrity check and must be merged first.
+
+**Not live Qwen:** existing local Docker Model Runner admission permits only
+pinned Chat and Embedding; rerank use case deliberately fails closed.
+The provider-specific /reranks route has a tested *fixture* HTTP contract,
+but no verified Docker Model Runner support; do not set
+`RAGOS_PROBE_RERANK_MODEL` merely because a Qwen3-Reranker weight exists.
+An authorized production secret resolver, token/budget/cost enforcement,
+and an operator-approved real scoring provider remain deployment blockers.
+Tests in `tests/test_gateway_rerank.py` inject only a fake provider.
+
+```bash
+.venv/bin/pytest -q tests/test_gateway_rerank.py tests/test_paired_trace_capture.py
+.venv/bin/ruff check packages/model-gateway/src/ragos/model_gateway/router.py \
+  packages/retrieval/src/ragos/retrieval/gateway.py tests/test_gateway_rerank.py
+```
+
 ### P1: mine *labelled and recalled* hard negative pairs
 
 The `mine` mode accepts **train-v2 only**. The v1 schema remains
