@@ -93,10 +93,15 @@ class _ScoredRecall:
                 for field in _IMMUTABLE
             ):
                 raise ValidationError("reranker modified frozen page evidence")
-            if type(candidate.score) not in (int, float) or not math.isfinite(candidate.score):
+            if type(candidate.score) not in (int, float):
+                raise ValidationError("reranker returned a nonfinite score")
+            try:
+                score = float(candidate.score)
+            except OverflowError:
+                raise ValidationError("reranker returned a nonfinite score") from None
+            if not math.isfinite(score):
                 raise ValidationError("reranker returned a nonfinite score")
             seen.add(candidate.chunk_id)
-            score = float(candidate.score)
             reordered.append(replace(original, score=score, rerank_score=score))
         return reordered + [replace(c) for c in candidates[depth:]]
 
