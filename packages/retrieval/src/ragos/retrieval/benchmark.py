@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -69,7 +70,18 @@ def compare_page_traces(baseline_raw: bytes, candidate_raw: bytes) -> dict[str, 
         if prior["question"] != next_case["question"] or labels(prior) != labels(next_case):
             raise ValueError("paired case question or graded gold changed")
         prior_units, next_units = _units(prior), _units(next_case)
-        if len(prior_units) != len(next_units) or set(prior_units) != set(next_units):
+        # A reranker may permute chunks, never silently add/remove them.
+        # Unique page-set equality alone misses deleted duplicate child chunks
+        # on the same PDF page and can distort page-level rank positions.
+        prior_chunks = Counter(
+            (item["doc_id"], item["page_no"]) for item in prior["retrieved"]
+        )
+        next_chunks = Counter(
+            (item["doc_id"], item["page_no"]) for item in next_case["retrieved"]
+        )
+        if prior_chunks != next_chunks:
+            raise ValueError("paired reranker changed recalled page/chunk multiplicity")
+        if set(prior_units) != set(next_units):
             raise ValueError("paired reranker changed the recalled page universe")
         gold = [GoldEvidence(**item) for item in prior["gold"]]
         before = hit_at_k([Grade(doc_id=d, page_no=p, grade=0) for d, p in prior_units], gold, 6)
