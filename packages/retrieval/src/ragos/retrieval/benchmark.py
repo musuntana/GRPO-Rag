@@ -41,6 +41,18 @@ def _units(case: dict[str, Any]) -> list[tuple[str, int]]:
     )]
 
 
+def _evidence_bucket(
+    pages: list[tuple[str, int]], gold: list[GoldEvidence],
+) -> str:
+    """Diagnose *recorded candidate-pool* visibility, not parser/model cause."""
+    targets = {(str(g.doc_id), g.page_no) for g in gold if g.grade >= 3}
+    if not targets.intersection(pages):
+        return "answer_page_missing_from_frozen_pool"
+    if not targets.intersection(pages[:6]):
+        return "answer_page_recalled_outside_top6"
+    return "answer_page_in_top6"
+
+
 def compare_page_traces(baseline_raw: bytes, candidate_raw: bytes) -> dict[str, Any]:
     """Compare two rankings of the exact same candidate pages and frozen gold.
 
@@ -64,6 +76,9 @@ def compare_page_traces(baseline_raw: bytes, candidate_raw: bytes) -> dict[str, 
         raise ValueError("paired traces have different case IDs")
 
     wins = losses = ties = 0
+    baseline_buckets: Counter[str] = Counter()
+    candidate_buckets: Counter[str] = Counter()
+    transitions: Counter[str] = Counter()
     for case_id, prior in first.items():
         next_case = second[case_id]
         # Gold page order does not change its labels, but edits to its grades do.
@@ -97,6 +112,11 @@ def compare_page_traces(baseline_raw: bytes, candidate_raw: bytes) -> dict[str, 
             losses += 1
         else:
             ties += 1
+        before_bucket = _evidence_bucket(prior_units, gold)
+        after_bucket = _evidence_bucket(next_units, gold)
+        baseline_buckets[before_bucket] += 1
+        candidate_buckets[after_bucket] += 1
+        transitions[f"{before_bucket} -> {after_bucket}"] += 1
 
     return {
         "evidence_kind": "offline_paired_rerank_traces_no_model_calls",
@@ -122,6 +142,12 @@ def compare_page_traces(baseline_raw: bytes, candidate_raw: bytes) -> dict[str, 
             for key, before in baseline["metrics"].items()
         },
         "hit_at_6_case_outcomes": {"improved": wins, "regressed": losses, "tied": ties},
+        "frozen_pool_error_attribution": {
+            "scope": "recorded_frozen_candidates_only_not_citation_or_root_cause",
+            "baseline": dict(sorted(baseline_buckets.items())),
+            "candidate": dict(sorted(candidate_buckets.items())),
+            "transitions": dict(sorted(transitions.items())),
+        },
         "candidate_identity_contract": "exact_chunk_id_and_page_v3",
         "label_review_status": "not_attested_by_trace_v3",
     }
