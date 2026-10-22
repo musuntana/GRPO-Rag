@@ -247,3 +247,16 @@ def test_injected_local_model_rejected_on_exposed_dev_api_or_prod(monkeypatch) -
         )
         with pytest.raises(ValidationError, match="local model gateway"):
             ModelRouter(_FakeSession(), local_model=local)
+
+
+def test_model_router_never_invents_dmr_rerank_endpoint(monkeypatch) -> None:
+    """Local Chat/Embedding admission is not a promise of a rerank route."""
+    wire = LocalWire()
+    router = _router(monkeypatch, config=_admission(wire=wire))
+    with pytest.raises(ProviderError, match="not admitted"):
+        router.rerank(
+            _ctx(),
+            query="warranty period",
+            documents=["24 months after acceptance"],
+        )
+    assert wire.calls == []

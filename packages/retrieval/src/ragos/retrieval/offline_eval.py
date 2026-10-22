@@ -23,6 +23,8 @@ MAX_CASES = 5000
 MAX_GOLD = 50
 MAX_RANKED = 500
 FORMAT_VERSION = "page-ranking-trace-v1"
+TRAIN_FORMAT_VERSION = "page-ranking-trace-train-v2"
+PAIRED_FORMAT_VERSION = "page-ranking-trace-v3"
 METRICS_VERSION = "page-aware-dedup-mrr10-v2"
 _MANIFEST_KEYS = {
     "type", "schema_version", "dataset_id", "tenant_id", "split", "index_id",
@@ -31,6 +33,7 @@ _MANIFEST_KEYS = {
 _CASE_KEYS = {"type", "case_id", "split", "question", "gold", "retrieved"}
 _GOLD_KEYS = {"doc_id", "page_no", "grade"}
 _RANK_KEYS = {"doc_id", "page_no"}
+_RANK_V3_KEYS = {"doc_id", "page_no", "chunk_id"}
 
 
 def _object(value: Any, *, fields: set[str], label: str) -> dict[str, Any]:
@@ -82,16 +85,25 @@ def _gold(values: Any) -> list[GoldEvidence]:
     return labels
 
 
-def _ranked(values: Any) -> list[Grade]:
+def _ranked(values: Any, *, require_chunk_ids: bool = False) -> list[Grade]:
     if not isinstance(values, list) or len(values) > MAX_RANKED:
-        raise ValueError("retrieved must contain at most 500 page identities")
+        raise ValueError("retrieved must contain at most 500 ranked candidates")
     ranks: list[Grade] = []
+    seen_chunk_ids: set[UUID] = set()
+    expected_fields = _RANK_V3_KEYS if require_chunk_ids else _RANK_KEYS
     for value in values:
-        item = _object(value, fields=_RANK_KEYS, label="retrieved page")
+        item = _object(value, fields=expected_fields, label="retrieved candidate")
+        doc_id = _name(item["doc_id"], label="retrieved doc_id")
+        page_no = _page(item["page_no"])
+        if require_chunk_ids:
+            chunk_id = _uuid(item["chunk_id"], label="retrieved chunk_id")
+            if chunk_id in seen_chunk_ids:
+                raise ValueError("retrieved contains duplicate chunk_id")
+            seen_chunk_ids.add(chunk_id)
         ranks.append(
             Grade(
-                doc_id=_name(item["doc_id"], label="retrieved doc_id"),
-                page_no=_page(item["page_no"]),
+                doc_id=doc_id,
+                page_no=page_no,
                 grade=0,  # Only human/reference gold labels define relevance.
             )
         )
@@ -117,10 +129,15 @@ def evaluate_trace_bytes(raw: bytes) -> dict[str, Any]:
         raise ValueError("invalid manifest JSON") from None
     if manifest["type"] != "manifest" or type(manifest["schema_version"]) is not int:
         raise ValueError("invalid manifest schema")
-    if manifest["schema_version"] != 1:
+    version = manifest["schema_version"]
+    if version not in (1, 2, 3):
         raise ValueError("unsupported trace schema version")
-    if manifest["split"] not in ("dev", "holdout"):
-        raise ValueError("manifest split must be dev or holdout")
+    if version == 1 and manifest["split"] not in ("dev", "holdout"):
+        raise ValueError("v1 manifest split must be dev or holdout")
+    if version == 2 and manifest["split"] != "train":
+        raise ValueError("v2 manifest must use train split")
+    if version == 3 and manifest["split"] not in ("dev", "holdout"):
+        raise ValueError("v3 manifest split must be dev or holdout")
     metadata = {
         key: _name(manifest[key], label=key)
         for key in ("dataset_id", "embedding_profile", "embedding_version", "retriever_version")
@@ -144,7 +161,7 @@ def evaluate_trace_bytes(raw: bytes) -> dict[str, Any]:
         case_ids.add(case_id)
         question = _name(record["question"], label="question", limit=4000)
         gold = _gold(record["gold"])
-        retrieved = _ranked(record["retrieved"])
+        retrieved = _ranked(record["retrieved"], require_chunk_ids=(version == 3))
         duplicate_chunks += len(retrieved) - len(unique_evidence(retrieved))
         cases.append(
             EvalCase(
@@ -158,7 +175,16 @@ def evaluate_trace_bytes(raw: bytes) -> dict[str, Any]:
         )
         ranks.append(retrieved)
     report = {
-        "trace_format": FORMAT_VERSION,
+        "trace_format": (
+            FORMAT_VERSION if version == 1
+            else TRAIN_FORMAT_VERSION if version == 2
+            else PAIRED_FORMAT_VERSION
+        ),
+        "rank_identity_contract": (
+            "legacy_page_only_v1" if version == 1
+            else "train_page_identity_v2" if version == 2
+            else "exact_chunk_id_v3"
+        ),
         "metric_semantics": METRICS_VERSION,
         "trace_sha256": hashlib.sha256(raw).hexdigest(),
         "split": manifest["split"],

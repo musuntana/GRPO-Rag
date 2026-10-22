@@ -41,6 +41,9 @@ jobs:
         run: >-
           .venv/bin/pytest -q
           tests/test_page_eval_baseline.py
+          tests/test_page_benchmark.py
+          tests/test_paired_trace_capture.py
+          tests/test_gateway_rerank.py
           tests/test_openai_compatible_provider.py
           tests/test_retrieval_metrics.py
           tests/test_cleanup_merged_branches.py

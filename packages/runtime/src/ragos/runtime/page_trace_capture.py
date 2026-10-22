@@ -88,7 +88,11 @@ def _verified_ranked_pages(
             or hit.source_text != hit.text
         ):
             raise ValidationError("ranked evidence is not the frozen published PDF source")
-        ranked.append({"doc_id": str(identity.document_id), "page_no": hit.page_no})
+        ranked.append({
+            "doc_id": str(identity.document_id),
+            "page_no": hit.page_no,
+            "chunk_id": str(identity.chunk_id),
+        })
     return ranked
 
 
@@ -121,8 +125,8 @@ async def capture_page_ranking_trace(
         raise PermissionDeniedError("page trace requires an explicitly authorized KB")
     if profile.tenant_id != tenant_ctx.tenant_id:
         raise PermissionDeniedError("retriever profile belongs to another tenant")
-    if split not in ("dev", "holdout"):
-        raise ValidationError("split must be dev or holdout")
+    if split not in ("train", "dev", "holdout"):
+        raise ValidationError("split must be train, dev or holdout")
     if not 1 <= len(cases) <= MAX_CASES or profile.top_k_recall > MAX_RANKED:
         raise ValidationError("page trace exceeds frozen case/rank limits")
     _nonnull(dataset_id, "dataset_id")
@@ -138,7 +142,7 @@ async def capture_page_ranking_trace(
 
     manifest = {
         "type": "manifest",
-        "schema_version": 1,
+        "schema_version": 2 if split == "train" else 3,
         "dataset_id": dataset_id,
         "tenant_id": str(tenant_ctx.tenant_id),
         "split": split,
@@ -148,6 +152,7 @@ async def capture_page_ranking_trace(
         "retriever_version": retriever_version,
     }
     lines = [_json_line(manifest)]
+    encoded_size = len(lines[0].encode("utf-8")) + 1
     for case in cases:
         # NEVER pass gold pages or the whole EvalCase into a retriever.
         hits = await dense.recall(case.question, tenant_ctx, profile)
@@ -171,7 +176,8 @@ async def capture_page_ranking_trace(
                 }
             )
         )
-        if sum(len(line.encode("utf-8")) + 1 for line in lines) > MAX_TRACE_BYTES:
+        encoded_size += len(lines[-1].encode("utf-8")) + 1
+        if encoded_size > MAX_TRACE_BYTES:
             raise ValidationError("page trace exceeds frozen byte limit")
 
     raw = ("\n".join(lines) + "\n").encode("utf-8")

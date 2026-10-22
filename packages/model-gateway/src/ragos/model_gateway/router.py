@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 from uuid import UUID
 
@@ -14,7 +15,7 @@ from ragos.model_gateway.local_admission import (
     local_admission_from_settings,
 )
 from ragos.model_gateway.profiles import ProfileResolver
-from ragos.model_gateway.providers import ChatChunk, EmbedResult, ResolvedRoute
+from ragos.model_gateway.providers import ChatChunk, EmbedResult, RerankEntry, ResolvedRoute
 from sqlmodel import Session
 
 LOGGER = get_logger(__name__)
@@ -158,3 +159,66 @@ class ModelRouter:
                 extra={"provider": route.provider_slug, "model": route.model_name},
             )
             raise
+
+    def rerank(
+        self,
+        tenant_ctx: TenantContext,
+        *,
+        query: str,
+        documents: list[str],
+        profile_override: UUID | None = None,
+    ) -> list[RerankEntry]:
+        """Tenant-bound model reranking; no generic direct provider bypass.
+
+        Local Docker Model Runner admission deliberately does not permit
+        reranking, because it has no verified /reranks route. Other providers
+        must pass existing profile, entitlement and secret admission gates.
+        Budget/cost accounting remains an explicit deployment blocker.
+        """
+        if not isinstance(query, str) or not 0 < len(query) <= 4000:
+            raise ValidationError("rerank query must be a bounded nonempty string")
+        if (
+            not isinstance(documents, list)
+            or not 1 <= len(documents) <= 50
+            or any(not isinstance(d, str) or not 0 < len(d) <= 16000 for d in documents)
+            or sum(len(d) for d in documents) > 160000
+        ):
+            raise ValidationError("rerank requires 1-50 bounded document passages")
+
+        route = self.resolve(tenant_ctx, "rerank", profile_override=profile_override)
+        try:
+            entries = route.provider.rerank(
+                query=query,
+                documents=documents,
+                model=route.model_name,
+                parameters=route.parameters,
+            )
+        except Exception:
+            LOGGER.exception(
+                "rerank call failed",
+                extra={"provider": route.provider_slug, "model": route.model_name},
+            )
+            raise
+        if (
+            not isinstance(entries, list)
+            or len(entries) != len(documents)
+            or any(not isinstance(entry, RerankEntry) for entry in entries)
+        ):
+            raise ProviderError("Reranker returned an incomplete candidate set")
+        indices: set[int] = set()
+        for entry in entries:
+            if (
+                type(entry.index) is not int
+                or not 0 <= entry.index < len(documents)
+                or entry.index in indices
+                or type(entry.score) not in (int, float)
+            ):
+                raise ProviderError("Reranker returned invalid indices or scores")
+            try:
+                score = float(entry.score)
+            except OverflowError:
+                raise ProviderError("Reranker returned invalid indices or scores") from None
+            if not math.isfinite(score):
+                raise ProviderError("Reranker returned invalid indices or scores")
+            indices.add(entry.index)
+        return entries

@@ -123,6 +123,14 @@ def test_missing_or_partial_rerank_scores_are_not_fake_success() -> None:
         provider.rerank(query="x", documents=["a", "b"], model="qwen")
 
 
+def test_overflowing_numeric_provider_responses_are_rejected() -> None:
+    provider, _ = _provider({
+        "results": [{"index": 0, "relevance_score": 10**1000}]
+    })
+    with pytest.raises(ProviderError, match="invalid numeric"):
+        provider.rerank(query="warranty", documents=["document"], model="qwen")
+
+
 def test_unsupported_provider_api_is_an_error_not_zero_scores() -> None:
     provider, _ = _provider(ProviderError("Model provider request failed"))
     with pytest.raises(ProviderError):

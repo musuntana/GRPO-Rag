@@ -111,11 +111,13 @@ def test_real_qdrant_postgres_produce_scored_page_trace(
             )
         record = [json.loads(line) for line in captured.splitlines()]
         assert record[0]["index_id"] == str(fixture.plan.index_id)
+        assert record[0]["schema_version"] == 3
         assert record[0]["embedding_version"] == fixture.plan.embedding_version
         assert record[1]["gold"] == [{
             "doc_id": str(fixture.plan.document_id), "page_no": 1, "grade": 3
         }]
         assert len(record[1]["retrieved"]) == 4
+        assert len({item["chunk_id"] for item in record[1]["retrieved"]}) == 4
         assert {item["page_no"] for item in record[1]["retrieved"]} == {1, 2}
         assert "Contract warranty period is 24 months." in case.question
         assert "retained deposit is 5 percent" not in captured.decode()
@@ -126,6 +128,40 @@ def test_real_qdrant_postgres_produce_scored_page_trace(
         assert scored["metrics"]["evidence_hit_rate"] == 1.0
         assert scored["metrics"]["recall_at_50"] == 1.0
         assert scored["evidence_kind"] == "offline_recorded_ranks_no_model_calls"
+
+        # Same authorized, published PG + Qdrant source, with a deterministic
+        # reranker callback. This is a transport check, NOT a real Qwen score.
+        from ragos.runtime.paired_trace_capture import capture_paired_page_traces
+
+        async def reversed_scores(_query, candidates, _ctx):
+            return [
+                replace(chunk, score=float(len(candidates) - rank))
+                for rank, chunk in enumerate(reversed(candidates))
+            ]
+
+        with scoped_session(database, fixture.ctx) as session:
+            dense = binding.dense(
+                reader, source=SearchRepository(session, fixture.ctx),
+                plan=fixture.plan, collection_prefix=prefix,
+            )
+            profile = _profile(fixture.ctx)
+            profile.rerank_model_profile = "ci-deterministic-stub"
+            paired = asyncio.run(
+                capture_paired_page_traces(
+                    tenant_ctx=fixture.ctx, plan=fixture.plan, dense=dense,
+                    profile=profile, cases=[case], split="holdout",
+                    dataset_id="synthetic-pdf-page-gold-v1",
+                    baseline_version="ci-frozen-dense",
+                    reranker_version="ci-deterministic-reranker",
+                    reranker_fn=reversed_scores,
+                )
+            )
+        assert paired.comparison["case_total"] == 1
+        assert paired.comparison["candidate"]["retriever_version"] == "ci-deterministic-reranker"
+        original = json.loads(paired.baseline.splitlines()[1])["retrieved"]
+        reranked = json.loads(paired.candidate.splitlines()[1])["retrieved"]
+        assert {x["page_no"] for x in original} == {x["page_no"] for x in reranked}
+        assert len(reranked) == len(original) == 4
 
         # A wrong (but page-in-bounds) gold is not used to steer the ranking.
         wrong = replace(case, gold_evidence=[
@@ -233,3 +269,25 @@ def test_reject_fake_hydrated_page_identity_instead_of_optimistic_scoring() -> N
     with pytest.raises(ValidationError, match="unversioned"):
         _capture(ctx, plan, retriever, _profile(ctx), [_case(plan, ctx)])
     assert retriever.count == 1
+
+
+def test_approved_train_trace_is_separate_from_dev_and_holdout() -> None:
+    tenant_id, kb_id, doc_id, index_id = uuid4(), uuid4(), uuid4(), uuid4()
+    ctx = TenantContext(
+        tenant_id=tenant_id, tenant_slug="train", actor_id="reviewer",
+        trace_id="train-only-capture", allowed_kb_ids=[kb_id],
+    )
+    plan = SimpleNamespace(
+        tenant_id=tenant_id, kb_id=kb_id, document_id=doc_id,
+        index_id=index_id, page_count=2,
+        embedding_profile="test_profile", embedding_version="frozen-version",
+    )
+    case = _case(plan, ctx, split="train")
+    dense = _NeverCalledRetriever()
+    raw = _capture(ctx, plan, dense, _profile(ctx), [case], split="train")
+    manifest = json.loads(raw.splitlines()[0])
+    assert manifest["schema_version"] == 2
+    assert manifest["split"] == "train"
+    assert evaluate_trace_bytes(raw)["trace_format"] == "page-ranking-trace-train-v2"
+    assert dense.count == 1
+    assert json.loads(raw.splitlines()[1])["retrieved"] == []
