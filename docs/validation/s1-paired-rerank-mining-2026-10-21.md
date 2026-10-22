@@ -148,8 +148,12 @@ label coverage is insufficient, **not** that a model has zero errors.
 - Docker Model Runner's currently documented OpenAI-compatible routes cover
   `/chat/completions` and `/embeddings`, not a standardized `/rerank`.
   Do not assume the locally installed `qwen3-reranker` exposes a score API.
-- For a baseline choose a genuinely tested Qwen3-Reranker-0.6B implementation
-  using QwenLM's official Transformers yes/no scoring example or an explicitly
+- For the first model-backed baseline, prefer Qwen's documented
+  `sentence_transformers.CrossEncoder('Qwen/Qwen3-Reranker-0.6B')`
+  `predict(query_document_pairs)` and `rank(query, documents)` adapter,
+  using pinned versions and the native logit-difference score; only use
+  QwenLM's lower-level Transformers yes/no scoring when this higher-level
+  mature path demonstrably fails or lacks needed features. Alternatively, use an explicitly
   compatible serving adapter, then put model calls behind the model gateway.
   Model weight identity, tokenizer, instruction, precision, batch size, CPU/GPU
   device, latency and request budget must be frozen alongside the trace.
@@ -165,4 +169,4 @@ Targeted tests and one manual (not push-triggered) Quick check must succeed
 on the exact final PR HEAD before merging. `main` must not be called verified
 from an earlier PR's CI run.
 
-Official implementation references: [QwenLM Qwen3 Reranker](https://github.com/QwenLM/Qwen3-Embedding) and [Docker Model Runner API](https://docs.docker.com/ai/model-runner/api-reference/).
+Official implementation references: [Qwen3-Reranker-0.6B model card / CrossEncoder usage](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B) and [QwenLM Qwen3 Reranker](https://github.com/QwenLM/Qwen3-Embedding) and [Docker Model Runner API](https://docs.docker.com/ai/model-runner/api-reference/).
