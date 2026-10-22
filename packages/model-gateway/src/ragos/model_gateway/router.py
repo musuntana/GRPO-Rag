@@ -212,8 +212,13 @@ class ModelRouter:
                 or not 0 <= entry.index < len(documents)
                 or entry.index in indices
                 or type(entry.score) not in (int, float)
-                or not math.isfinite(entry.score)
             ):
+                raise ProviderError("Reranker returned invalid indices or scores")
+            try:
+                score = float(entry.score)
+            except OverflowError:
+                raise ProviderError("Reranker returned invalid indices or scores") from None
+            if not math.isfinite(score):
                 raise ProviderError("Reranker returned invalid indices or scores")
             indices.add(entry.index)
         return entries
