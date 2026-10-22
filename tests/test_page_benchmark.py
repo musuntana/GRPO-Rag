@@ -67,6 +67,7 @@ def test_paired_rerank_measures_same_universe_and_reports_no_text() -> None:
     lambda rows: rows[1].update({"question": "swapped?"}),
     lambda rows: rows[1]["gold"][1].update({"grade": 2}),
     lambda rows: rows[1]["retrieved"].pop(),
+    lambda rows: rows[1]["retrieved"].pop(1),  # same unique pages, wrong child count
     lambda rows: rows[1]["retrieved"][0].update({"doc_id": "foreign"}),
     lambda rows: rows[1].update({"case_id": str(uuid4())}),
 ])
@@ -137,3 +138,13 @@ def test_training_trace_cannot_be_used_as_reranker_quality_benchmark() -> None:
     rows = _rows(split="train")
     with pytest.raises(ValueError, match="dev/holdout v1"):
         compare_page_traces(_raw(rows), _raw(rows))
+
+
+def test_paired_rerank_allows_duplicate_chunk_reorder_when_counts_match() -> None:
+    rows = _rows()
+    ranked = deepcopy(rows)
+    ranked[0]["retriever_version"] = "reranked-v1"
+    ranked[1]["retrieved"] = list(reversed(ranked[1]["retrieved"]))
+    result = compare_page_traces(_raw(rows), _raw(ranked))
+    assert result["case_total"] == 1
+    assert result["baseline"]["metrics"] != result["candidate"]["metrics"]
