@@ -80,6 +80,7 @@ def test_tenant_router_reranks_and_adapter_keeps_original_source(monkeypatch):
     [RerankEntry(index=0, score=0.9), RerankEntry(index=0, score=0.1)],
     [RerankEntry(index=0, score=float("nan")), RerankEntry(index=1, score=0.1)],
     [RerankEntry(index=0, score=True), RerankEntry(index=1, score=0.1)],
+    [RerankEntry(index=0, score=10**1000), RerankEntry(index=1, score=0.1)],
     [RerankEntry(index=0, score=0.9), RerankEntry(index=3, score=0.1)],
 ])
 def test_router_rejects_partial_duplicate_or_nonfinite_scores(monkeypatch, bad):
