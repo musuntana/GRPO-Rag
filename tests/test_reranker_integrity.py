@@ -115,6 +115,9 @@ def test_reranker_cannot_mutate_passed_input_objects() -> None:
 
     with pytest.raises(ValidationError, match="immutable evidence lineage"):
         _run(chunks, model)
+    # A rejected provider cannot mutate the caller's evidence objects.
+    assert chunks[0].text == "trusted page 1"
+    assert chunks[0].source_text == "trusted page 1"
 
 
 @pytest.mark.parametrize("score", [float("nan"), float("inf"), -float("inf"), True, "1.0"])
@@ -150,3 +153,16 @@ def test_empty_candidate_set_does_not_call_model() -> None:
     assert result.ranked == []
     assert result.rerank_model_profile is None
     assert invoked is False
+
+
+def test_successful_rerank_cannot_mutate_original_candidates() -> None:
+    chunks = _chunks()
+
+    async def model(_query, candidates, _ctx):
+        candidates[0].score = 0.12
+        return [candidates[1], candidates[0]]
+
+    result = _run(chunks, model)
+    assert result.ranked[1].score == 0.12
+    assert [chunk.score for chunk in chunks] == [0.5, 0.5]
+    assert all(chunk.rerank_score is None for chunk in chunks)
