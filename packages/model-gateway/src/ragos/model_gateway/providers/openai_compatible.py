@@ -87,7 +87,10 @@ def _http_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeo
 def _safe_float(value: Any) -> float:
     if isinstance(value, bool) or not isinstance(value, (float, int)):
         raise ProviderError("Model provider returned an invalid numeric value")
-    result = float(value)
+    try:
+        result = float(value)
+    except OverflowError:
+        raise ProviderError("Model provider returned an invalid numeric value") from None
     if not math.isfinite(result):
         raise ProviderError("Model provider returned a non-finite numeric value")
     return result
