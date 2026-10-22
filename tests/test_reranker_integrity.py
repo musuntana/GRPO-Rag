@@ -120,7 +120,9 @@ def test_reranker_cannot_mutate_passed_input_objects() -> None:
     assert chunks[0].source_text == "trusted page 1"
 
 
-@pytest.mark.parametrize("score", [float("nan"), float("inf"), -float("inf"), True, "1.0", 10**1000])
+@pytest.mark.parametrize(
+    "score", [float("nan"), float("inf"), -float("inf"), True, "1.0", 10**1000]
+)
 def test_invalid_scores_fail_closed(score) -> None:
     chunks = _chunks()
 
