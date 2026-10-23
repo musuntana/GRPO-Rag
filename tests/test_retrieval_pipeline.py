@@ -415,6 +415,89 @@ def test_the_ambiguous_path_proceeds_after_grading() -> None:
     assert result.abstained is False
 
 
+def test_re_retrieval_reranks_new_and_original_evidence_together() -> None:
+    """A new answering page must not sit after the original top-six cutoff."""
+    ctx = _ctx()
+    older = [_chunk(f"Earlier related page {i}", score=0.95 - i * 0.01) for i in range(8)]
+    answering = _chunk("The updated clause provides the answer.", score=0.01)
+    model_inputs: list[tuple[str, set[UUID]]] = []
+
+    async def recall(query, _profile, _context):
+        return [answering, older[0]] if query == "refined question" else older
+
+    async def refine(_request, _context):
+        return "refined question"
+
+    async def rerank_model(query, chunks, _context):
+        model_inputs.append((query, {item.chunk_id for item in chunks}))
+        for item in chunks:
+            item.score = 10.0 if item.chunk_id == answering.chunk_id else 0.1
+        return sorted(chunks, key=lambda item: item.score, reverse=True)
+
+    async def generate(_query, evidence, _context):
+        return f"Answer from page {evidence[0].page_no} [1]."
+
+    profile = _profile(
+        channel_budgets={"dense": 1.0},
+        top_k_generate=3,
+        top_k_rerank=10,
+        rerank_model_profile="synthetic-reranker",
+    )
+    profile.tenant_id = ctx.tenant_id
+    result = asyncio.run(
+        RAGPipeline(
+            recall_channels={"dense": recall},
+            generator=generate,
+            grader=RelevanceGrader(judge=_judge([1] * 10), thresholds=CragThresholds()),
+            reranker=rerank_model,
+            refiner=refine,
+        ).run("original question", ctx, profile)
+    )
+
+    ids = [item.chunk_id for item in result.evidence]
+    assert ids[0] == answering.chunk_id
+    assert older[0].chunk_id in ids
+    assert result.retrieval_explain.re_retrieval_added_chunks == 1
+    assert result.retrieval_explain.rerank_model_profile == "synthetic-reranker"
+    assert result.retrieval_explain.rerank_depth == 9
+    assert len(model_inputs) == 3
+    assert model_inputs[-1][0] == "refined question"
+    assert {answering.chunk_id, older[0].chunk_id} <= model_inputs[-1][1]
+
+
+def test_re_retrieval_without_reranker_keeps_new_and_old_evidence() -> None:
+    """The identity reranker must also give fresh evidence a Top-K opportunity."""
+    ctx = _ctx()
+    older = [_chunk(f"First pass page {i}") for i in range(4)]
+    answering = _chunk("New second pass evidence")
+
+    async def recall(query, _profile, _context):
+        return [answering, older[0]] if query == "refined question" else older
+
+    async def refine(_request, _context):
+        return "refined question"
+
+    async def generate(_query, _evidence, _context):
+        return "The answer [1]."
+
+    profile = _profile(channel_budgets={"dense": 1.0}, top_k_generate=2)
+    profile.tenant_id = ctx.tenant_id
+    result = asyncio.run(
+        RAGPipeline(
+            recall_channels={"dense": recall},
+            generator=generate,
+            grader=RelevanceGrader(judge=_judge([1] * 4), thresholds=CragThresholds()),
+            refiner=refine,
+        ).run("original question", ctx, profile)
+    )
+
+    assert [item.chunk_id for item in result.evidence] == [
+        answering.chunk_id,
+        older[0].chunk_id,
+    ]
+    assert result.retrieval_explain.re_retrieval_added_chunks == 1
+
+
 def test_an_unparseable_grader_response_defaults_to_irrelevant() -> None:
     """A missing grade must not become evidence that a passage was relevant."""
 
