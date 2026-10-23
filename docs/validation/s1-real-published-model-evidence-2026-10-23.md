@@ -1,6 +1,6 @@
 # S1: real local Embedding over published PostgreSQL/Qdrant PDF evidence
 
-2026-10-23. Base `d6e74f2`; local branch `codex/s1-real-published-model-evidence`. This is an uncommitted acceptance-test addition, not a production feature or S1 exit. The sibling JSON freezes the exact test-source hash and measured results.
+2026-10-23. Base `d6e74f2`; local branch `codex/s1-real-published-model-evidence`. This is an operator acceptance-test addition, not a production feature or S1 exit. Results were captured from the working tree before commit; the sibling JSON freezes the exact test-source hash and measured results. Final PR CI is separate evidence.
 
 ## Outcome
 
