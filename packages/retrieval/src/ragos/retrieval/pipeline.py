@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from itertools import zip_longest
 from uuid import UUID
 
 from ragos.core.errors import ValidationError
@@ -204,12 +205,17 @@ class RAGPipeline:
             seen = {c.chunk_id for c in final_ranked.ranked}
             added = [c for c in retry.reranked.ranked if c.chunk_id not in seen]
             explain.re_retrieval_added_chunks = len(added)
-            final_ranked = RerankResult(
-                query=refined,
-                ranked=final_ranked.ranked + added,
-                rerank_model_profile=final_ranked.rerank_model_profile,
-                depth=max(final_ranked.depth, retry.reranked.depth),
-            )
+            if added:
+                # Re-rank one bounded, deduplicated pool. Appending the retry to
+                # the first pass silently discards new pages at the Top-K cutoff.
+                # Interleaving gives both queries a chance in rerank's bounded
+                # window, without comparing scores from different queries.
+                combined = _interleave_unique(retry.reranked.ranked, final_ranked.ranked)
+                final_ranked = await rerank(
+                    refined, combined, profile, tenant_ctx, reranker=self.reranker
+                )
+                explain.rerank_depth = final_ranked.depth
+                explain.rerank_model_profile = final_ranked.rerank_model_profile
 
         selected = select_evidence(final_ranked.ranked, profile)
         parents, parents_resolved = await self._expand(selected, tenant_ctx)
@@ -370,6 +376,32 @@ class _RecallPass:
 
     channels: dict[str, list[ScoredChunk]]
     reranked: RerankResult
+
+
+def _interleave_unique(
+    preferred: list[ScoredChunk], fallback: list[ScoredChunk]
+) -> list[ScoredChunk]:
+    """Give each query's candidates a fair share of the bounded rerank window.
+
+    Preserve immutable evidence lineage if a chunk appears in both passes.
+    """
+    merged: list[ScoredChunk] = []
+    seen: dict[UUID, ScoredChunk] = {}
+    for pair in zip_longest(preferred, fallback):
+        for chunk in pair:
+            if chunk is None:
+                continue
+            previous = seen.get(chunk.chunk_id)
+            if previous is not None:
+                if (
+                    previous.source_identity != chunk.source_identity
+                    or previous.source_text != chunk.source_text
+                ):
+                    raise ValidationError("cross-pass evidence has conflicting source lineage")
+                continue
+            seen[chunk.chunk_id] = chunk
+            merged.append(chunk)
+    return merged
 
 
 def _as_turns(
