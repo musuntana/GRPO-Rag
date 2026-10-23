@@ -58,6 +58,84 @@ def test_chat_calls_real_protocol_route_and_parses_content() -> None:
     assert timeout == 5
 
 
+def test_chat_accepts_real_qwen_usage_with_nested_details() -> None:
+    response = {
+        "choices": [{"message": {"content": "Hi"}, "finish_reason": "stop"}],
+        "usage": {
+            "completion_tokens": 1,
+            "prompt_tokens": 2,
+            "total_tokens": 3,
+            "prompt_tokens_details": {"cached_tokens": 0},
+        },
+    }
+    provider, transport = _provider(response)
+    chunk = provider.chat(messages=[{"role": "user", "content": "Hi?"}], model="qwen")
+
+    assert chunk.content == "Hi"
+    assert chunk.usage == {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}
+    # The provider response dict (and its usage) must not be mutated.
+    assert transport.response["usage"] == {
+        "completion_tokens": 1,
+        "prompt_tokens": 2,
+        "total_tokens": 3,
+        "prompt_tokens_details": {"cached_tokens": 0},
+    }
+
+
+@pytest.mark.parametrize(
+    "details",
+    [None, {"cached_tokens": 0}, {"cached_tokens": 4, "reasoning_tokens": 2}],
+)
+def test_chat_accepts_null_or_nonnegative_integer_usage_details(details) -> None:
+    provider, _ = _provider(
+        {
+            "choices": [{"message": {"content": "Hi"}}],
+            "usage": {
+                "prompt_tokens": 2,
+                "completion_tokens": 1,
+                "prompt_tokens_details": details,
+                "completion_tokens_details": details,
+            },
+        }
+    )
+    chunk = provider.chat(messages=[{"role": "user", "content": "Hi?"}], model="qwen")
+
+    # Standard detail objects are validated then stripped from internal usage.
+    assert chunk.usage == {"prompt_tokens": 2, "completion_tokens": 1}
+
+
+@pytest.mark.parametrize(
+    "bad_usage",
+    [
+        {"prompt_tokens": 2, "prompt_tokens_details": 5},
+        {"prompt_tokens": 2, "prompt_tokens_details": "3"},
+        {"prompt_tokens": 2, "prompt_tokens_details": {"cached_tokens": -1}},
+        {"prompt_tokens": 2, "prompt_tokens_details": {"cached_tokens": True}},
+        {"prompt_tokens": 2, "prompt_tokens_details": {"cached_tokens": {"x": 1}}},
+        {"prompt_tokens": 2, "custom_details": {"anything": 1}},
+        {"completion_tokens": True},
+        {"total_tokens": -1},
+        {"completion_tokens": 1.0},
+        {"prompt_tokens": 2, "unknown_extra": "3"},
+    ],
+)
+def test_chat_rejects_invalid_usage_shapes(bad_usage) -> None:
+    response = {
+        "choices": [{"message": {"content": "Hi"}}],
+        "usage": dict(bad_usage),
+    }
+    provider, transport = _provider(response)
+    with pytest.raises(ProviderError, match="Invalid chat completion response"):
+        provider.chat(messages=[{"role": "user", "content": "x"}], model="q")
+    assert transport.response["usage"] == bad_usage
+
+
+def test_chat_without_usage_reports_none() -> None:
+    provider, _ = _provider({"choices": [{"message": {"content": "Hi"}}]})
+    chunk = provider.chat(messages=[{"role": "user", "content": "x"}], model="q")
+    assert chunk.usage is None
+
+
 def test_embedding_indexes_are_restored_to_input_order() -> None:
     provider, transport = _provider(
         {
