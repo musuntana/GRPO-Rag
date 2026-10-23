@@ -170,3 +170,40 @@ def test_paired_rerank_allows_chunk_reorder_when_identity_multiset_matches() -> 
     result = compare_page_traces(_raw(rows), _raw(ranked))
     assert result["case_total"] == 1
     assert result["baseline"]["metrics"] != result["candidate"]["metrics"]
+
+
+def test_error_attribution_separates_frozen_pool_miss_from_top6_rank_miss() -> None:
+    base = _rows()
+    base[1]["retrieved"] = [
+        {"doc_id": "decoy", "page_no": page, "chunk_id": str(uuid4())}
+        for page in range(1, 7)
+    ] + [{"doc_id": "contract", "page_no": 7, "chunk_id": str(uuid4())}]
+    candidate = deepcopy(base)
+    candidate[0]["retriever_version"] = "rerank-v2"
+    candidate[1]["retrieved"] = [
+        candidate[1]["retrieved"][-1], *candidate[1]["retrieved"][:-1]
+    ]
+    result = compare_page_traces(_raw(base), _raw(candidate))
+    diagnosis = result["frozen_pool_error_attribution"]
+    assert diagnosis["baseline"] == {"answer_page_recalled_outside_top6": 1}
+    assert diagnosis["candidate"] == {"answer_page_in_top6": 1}
+    assert diagnosis["transitions"] == {
+        "answer_page_recalled_outside_top6 -> answer_page_in_top6": 1
+    }
+    assert result["hit_at_6_case_outcomes"]["improved"] == 1
+    assert "Where is the warranty?" not in json.dumps(result)
+
+
+def test_error_attribution_does_not_blame_ranking_for_missing_gold() -> None:
+    base = _rows()
+    base[1]["retrieved"] = base[1]["retrieved"][:3]
+    candidate = deepcopy(base)
+    candidate[0]["retriever_version"] = "rerank-v2"
+    candidate[1]["retrieved"] = list(reversed(candidate[1]["retrieved"]))
+    result = compare_page_traces(_raw(base), _raw(candidate))
+    diagnosis = result["frozen_pool_error_attribution"]
+    assert diagnosis["baseline"] == {"answer_page_missing_from_frozen_pool": 1}
+    assert diagnosis["candidate"] == {"answer_page_missing_from_frozen_pool": 1}
+    assert result["hit_at_6_case_outcomes"] == {
+        "improved": 0, "regressed": 0, "tied": 1,
+    }
