@@ -1,5 +1,7 @@
 # 当前工程基线（唯一实时状态入口）
 
+> **2026-10-23 本地待合入验收**：基于 `d6e74f2`，新增默认关闭的真实模型/已发布证据验收。两页合成 PDF 经真实 ModelRouter/数据库模型绑定、Qwen Embedding、PG 发布与 Qdrant HTTP 检索回填，专项 3 passed/7 次实际 embedding 请求；跨租户、未绑定模型及错误版本负例通过。详见 [证据与边界](validation/s1-real-published-model-evidence-2026-10-23.md)。尚未证明生产 RLS/鉴权、隔离 worker、真实语料质量或完整 UI；扩大本地回归有一个已独立复现的 macOS/Linux runner 基线失败，不能称全套通过。
+
 > **2026-10-23 本机验收增量**：基于已含 PR #23–#26 的 `5510f6b`，OpenCode 修复 Qdrant CLI 生命周期和 Chat 嵌套 usage 兼容性，Codex 已实际跑通 **真实本机 Qwen Embedding/Chat + 生成合成 PDF + Poppler + 内存 Qdrant + 结构引用**。Embedding 1024 维、检索页 1/2、结构引用 `ok`；定向测试 46 passed/3 skipped。源码哈希、环境、复现及局限见 [本机验收](validation/s1-local-model-acceptance-2026-10-23.md)。这些结果以验收 JSON 中的源码哈希为准；合并时还需核对最终提交的 CI，不替代下列历史 CI 证据；无真实企业 Gold、语义引用/生产授权或 S1 用户旅程验收。
 
 **核对日期：2026-10-22。** 仓库：`musuntana/GRPO-Rag`；本轮代码合并基线 `8f7be869be6d5e3b955001d8eca761e8f7dd644a`（PR #20、#21 先后合并，之后如有文档提交，以 GitHub 当前 main 为准）。[一次性最新 HEAD 验证 #39757149966](https://github.com/musuntana/GRPO-Rag/actions/runs/39757149966) 分别检出 #20 `096a12a`（Ruff + **61 passed**）和 #21 `44aa2e2`（Ruff + **54 passed**），其最新源码组合在隔离验证分支 `f59473c` 通过 **1053 pytest / Ruff / PostgreSQL 18 / Qdrant 1.19.1 / Poppler / Alembic**。成功状态属于该隔离验证提交，并非两个 PR 各自最新 SHA 的原生 Full required check；静态代码复核已作为 COMMENT review 留在各 PR。**没有真实 Qwen 权重、人工审核的 dev/holdout 或生产预算与计费验收。**
