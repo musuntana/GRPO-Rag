@@ -76,7 +76,9 @@ def inspect_dataset(data: bytes) -> dict[str, Any]:
             continue
         try:
             item = _json_object_unique(raw.encode("utf-8"))
-        except ValueError:
+        except (ValueError, RecursionError):
+            # Deeply nested JSON exhausts the decoder recursion budget; treat it
+            # as malformed input at this boundary instead of crashing.
             issues.append(f"line {line_no}: invalid or ambiguous JSON object")
             continue
 

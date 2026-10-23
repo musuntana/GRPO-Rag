@@ -2,6 +2,8 @@
 
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 SPEC = importlib.util.spec_from_file_location(
@@ -11,6 +13,22 @@ SPEC = importlib.util.spec_from_file_location(
 assert SPEC and SPEC.loader
 module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
+
+SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "check_gold_readiness.py"
+
+PRIVATE_MARKER = "PRIVATE-GOLD-MARKER-9f2c1b"
+
+
+def deep_nesting_payload(depth: int = 10_000) -> bytes:
+    return (
+        b'{"case_id": "case-deep", "question": "'
+        + PRIVATE_MARKER.encode()
+        + b'", "payload": '
+        + b"[" * depth
+        + b"0"
+        + b"]" * depth
+        + b"}"
+    )
 
 
 def rows():
@@ -108,3 +126,26 @@ def test_unhashable_split_and_intent_rejected_without_crash():
     assert not report["ready"]
     assert any("invalid split" in issue for issue in report["issues"])
     assert any("invalid intent" in issue for issue in report["issues"])
+
+
+def test_deeply_nested_json_record_rejected_as_malformed():
+    report = module.inspect_dataset(deep_nesting_payload())
+    assert not report["ready"]
+    assert any("line 1: invalid" in issue for issue in report["issues"])
+    assert PRIVATE_MARKER not in json.dumps(report)
+
+
+def test_cli_deeply_nested_input_exits_controlled_without_traceback(tmp_path):
+    path = tmp_path / "deep.jsonl"
+    path.write_bytes(deep_nesting_payload() + b"\n")
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), str(path)],
+        capture_output=True,
+        timeout=10,
+    )
+    assert proc.returncode == 1
+    assert b"Traceback" not in proc.stderr
+    assert PRIVATE_MARKER.encode() not in proc.stdout
+    assert PRIVATE_MARKER.encode() not in proc.stderr
+    report = json.loads(proc.stdout)
+    assert report["ready"] is False
