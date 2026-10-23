@@ -43,6 +43,31 @@ _CHAT_PARAMETERS = frozenset(
 )
 
 
+_USAGE_DETAIL_KEYS = frozenset({"prompt_tokens_details", "completion_tokens_details"})
+
+
+def _flat_usage(usage: dict[str, Any]) -> dict[str, int]:
+    """Validate OpenAI usage and return flat integer token counts.
+
+    Standard detail objects (prompt_tokens_details / completion_tokens_details)
+    may be null or non-negative strict-integer dicts; they are validated here and
+    stripped so ChatChunk.usage stays flat. Any other non-int or negative value,
+    including nested objects under unknown keys, is rejected.
+    """
+    for key, value in usage.items():
+        if key not in _USAGE_DETAIL_KEYS:
+            if type(value) is not int or value < 0:
+                raise TypeError
+            continue
+        if value is None:
+            continue
+        if not isinstance(value, dict) or any(
+            type(nested) is not int or nested < 0 for nested in value.values()
+        ):
+            raise TypeError
+    return {key: value for key, value in usage.items() if key not in _USAGE_DETAIL_KEYS}
+
+
 class _NoRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -157,11 +182,11 @@ class OpenAICompatibleProvider:
             if not isinstance(content, str):
                 raise TypeError
             usage = data.get("usage")
-            if usage is not None and (
-                not isinstance(usage, dict)
-                or any(type(v) is not int or v < 0 for v in usage.values())
-            ):
-                raise TypeError
+            if usage is not None:
+                if not isinstance(usage, dict):
+                    raise TypeError
+                # New flat dict: the provider response is never mutated.
+                usage = _flat_usage(usage)
         except (KeyError, IndexError, TypeError):
             raise ProviderError("Invalid chat completion response") from None
         return ChatChunk(
