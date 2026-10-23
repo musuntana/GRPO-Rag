@@ -1,0 +1,74 @@
+{
+  "verified_at": "2026-10-23T11:00:40.623559+08:00",
+  "base_sha": "5510f6b8a57c003752c3a86e693ad691ca45ff21",
+  "branch": "codex/s1-local-model-acceptance",
+  "source_state": "uncommitted_working_tree",
+  "source_sha256": {
+    "scripts/check_frozen_embedding.py": "4893bcf83e048ff10784f236d34aafd99dca625e936a6daf100dc99c0823d1c2",
+    "packages/model-gateway/src/ragos/model_gateway/providers/openai_compatible.py": "af2a1cafa2573546d484afc9dbbc8bc3899fd3ced207a5ef5db2cc430c060ead",
+    "tests/test_frozen_embedding_cli.py": "ccbb64d887d78cb517cc95a75e966fd170013fce1c7cd30e8bdf29eeff535374",
+    "tests/test_openai_compatible_provider.py": "a23bad1c7db6945b972191a5d84c091b4091124f3b0ef1bbf75e1db8364e07e7"
+  },
+  "chat": {
+    "status": "PASS",
+    "nonempty_response": true,
+    "usage": {
+      "completion_tokens": 5,
+      "prompt_tokens": 14,
+      "total_tokens": 19
+    },
+    "elapsed_seconds": 4.805
+  },
+  "pdf": {
+    "chat_model": "docker.io/ai/qwen3:4b-instruct-2507-q4_K_M",
+    "embedding_dimension": 1024,
+    "embedding_model": "docker.io/ragos/qwen3-embedding:0.6b-q8",
+    "embedding_profile": "qwen3_embedding",
+    "embedding_revision_id": "79898cf0ff54015bf309900ccc25a340dd0ab011bbc78486e50abbcfb4ae908e",
+    "embedding_version": "508b34078998e0aa_79898cf0ff54015bf309900ccc25a340dd0ab011bbc78486e50abbcfb4ae908e_1024",
+    "evaluation_scope": "one_synthetic_question_only",
+    "hit_at_2": 1.0,
+    "model_weight_attestation": "not_verified",
+    "production_gateway_verification": "not_performed",
+    "readback_digest": "62a80f78b44a1fdcfca1ee41a4d503f5a8354ec27c21ee5c788f674ffb7843ca",
+    "retrieved_page_numbers": [
+      1,
+      2
+    ],
+    "schema_version": "s1-local-pdf-model-smoke-v1",
+    "semantic_verification": "not_checked",
+    "source_kind": "generated_synthetic_pdf_bytes",
+    "source_page_count": 3,
+    "source_sha256": "5a7651492d55c950b8eca1f35315491997119a315e18f67da3f09daad778a2ea",
+    "structural_citation_verdicts": [
+      "ok"
+    ],
+    "vector_store": "embedded_qdrant"
+  },
+  "pdf_execution": {
+    "exit_code": 0,
+    "stdout": "Local synthetic PDF smoke report written (no source/answer text).\n",
+    "stderr": "",
+    "elapsed_seconds": 4.906
+  },
+  "runtime": {
+    "docker": "29.8.2",
+    "poppler": "26.10.0",
+    "python": "3.12.15",
+    "qdrant_client": "1.19.1",
+    "context_size": 2048,
+    "keep_alive": "5m",
+    "embedding_mode": "embedding",
+    "chat_mode": "completion",
+    "chat_revision_assertion": "sha256:8cd2927dc3a33531aa57f2479e2dcfb16e3bf53e31de561a612fcbc3cf6a6893",
+    "prior_model_runtime_overrides": []
+  },
+  "verification": {
+    "codex_focused_pytest": "46 passed, 3 skipped",
+    "ruff": "PASS",
+    "opencode_local_suite": "1041 passed, 41 skipped",
+    "full_integration": "NOT_RUN",
+    "semantic_citation": "NOT_CHECKED",
+    "production_tenant_gateway": "NOT_PERFORMED"
+  }
+}
