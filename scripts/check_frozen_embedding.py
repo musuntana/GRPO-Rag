@@ -43,7 +43,8 @@ def main() -> int:
         binding = LocalFrozenEmbedding(provider, spec, local_probe_opt_in=True)
         ctx = _context()
         chunks = _chunks(embedding_version=spec.version)
-        with QdrantClient(":memory:") as client:
+        client = QdrantClient(":memory:")
+        try:
             writer = binding.writer(client, collection_prefix="ragos_local_qwen")
             writer.upsert(tenant_ctx=ctx, tier=SearchTier.STABLE, chunks=chunks)
             digest = writer.reconcile(tenant_ctx=ctx, tier=SearchTier.STABLE, chunks=chunks)
@@ -64,6 +65,8 @@ def main() -> int:
             )
             print("Test-only synthetic pages; model relevance and citations not evaluated.")
             return 0
+        finally:
+            client.close()
     except (ValueError, RagOSError) as exc:
         print(f"Local embedding probe failed ({type(exc).__name__}); no source leaked")
         return 1
