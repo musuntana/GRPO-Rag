@@ -9,6 +9,7 @@ shape of result.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 import json
 from uuid import UUID, uuid4, uuid5
 
@@ -496,6 +497,31 @@ def test_re_retrieval_without_reranker_keeps_new_and_old_evidence() -> None:
         older[0].chunk_id,
     ]
     assert result.retrieval_explain.re_retrieval_added_chunks == 1
+
+
+def test_re_retrieval_rejects_conflicting_source_lineage() -> None:
+    """A second read must not silently replace an already-seen source span."""
+    ctx = _ctx()
+    existing = _chunk("Original immutable page")
+    answering = _chunk("New answering page")
+    conflicting = replace(existing, source_text="Modified text of different length")
+
+    async def recall(query, _profile, _context):
+        return [answering, conflicting] if query == "refined question" else [existing]
+
+    async def refine(_request, _context):
+        return "refined question"
+
+    profile = _profile(channel_budgets={"dense": 1.0})
+    profile.tenant_id = ctx.tenant_id
+    pipeline = RAGPipeline(
+        recall_channels={"dense": recall},
+        generator=_gen,
+        grader=RelevanceGrader(judge=_judge([1, 1]), thresholds=CragThresholds()),
+        refiner=refine,
+    )
+    with pytest.raises(ValidationError, match="cross-pass evidence has conflicting source lineage"):
+        asyncio.run(pipeline.run("original question", ctx, profile))
 
 
 def test_an_unparseable_grader_response_defaults_to_irrelevant() -> None:
