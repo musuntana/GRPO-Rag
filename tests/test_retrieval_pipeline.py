@@ -219,6 +219,29 @@ def test_rrf_is_the_default_and_is_scale_independent() -> None:
     assert [c.text for c in fused] == ["agreed", "dense only, high raw score"]
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("text", "conflicting passage text"),
+        ("page_no", 19),
+        ("start_char_idx", 1),
+        ("element_type", "table"),
+    ],
+)
+def test_fusion_rejects_same_chunk_id_with_conflicting_evidence_metadata(
+    field: str, value: object
+) -> None:
+    """A duplicate ID across recall channels must represent the same immutable evidence."""
+    original = _chunk("stable passage")
+    conflicting = replace(original, **{field: value})
+
+    with pytest.raises(ValidationError, match="same chunk id has conflicting evidence lineage"):
+        Fusioner().fuse(
+            {"dense": [original], "lexical": [conflicting]},
+            FusionConfig(),
+        )
+
+
 def test_weighted_fusion_instead_respects_the_raw_score() -> None:
     """The contrast that justifies making join_mode profile-selected."""
     agreed = _chunk("agreed", score=0.4)
