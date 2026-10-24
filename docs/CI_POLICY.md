@@ -1,12 +1,12 @@
 # GitHub Actions / Repository Hygiene 策略
 
-更新：2026-10-21。目标是**少花 Actions 分钟数，同时不降低合并时的安全门槛**。源仓库仅在需要验证时运行 CI。昂贵集成检查不因每次提交自动运行。
+更新：2026-10-24。目标是**少花 Actions 分钟数，同时不降低合并时的安全门槛**。源仓库仅在需要验证时运行 CI。昂贵集成检查不因每次提交自动运行。
 
 ## 工作流触发
 
 | Workflow | 唯一触发方式 | 覆盖 | 推荐时机 |
 |---|---|---|---|
-| `Quick checks (manual)` | Actions → Run workflow → 选择待审查分支 | 冻结安装、作用域 Ruff、离线检索指标及模型 HTTP 合同单测；**不启动 DB** | 完成本地改动、准备请求 review 时 |
+| `Quick checks (manual)` | Actions → Run workflow → 选择待审查分支 | 冻结安装、作用域 Ruff、离线检索指标/流水线、检索 API 序列化、聊天事件追踪及模型 HTTP 合同测试；**不启动 DB** | 完成本地改动、准备请求 review 时 |
 | `Full integration (manual)` | Actions → Run workflow → 选择待审查分支 | PostgreSQL + Qdrant + Poppler、全量 pytest、Ruff、Alembic、进程检查 | 索引/身份/模型/数据库修改的 PR **最终提交**，或发布/故障恢复验收 |
 | `Prune merged branches (manual)` | Actions → Run workflow → 先 dry-run，确认后 delete-merged | 检查 merged PR、没有打开的依赖 PR、没有超出 main 的提交及保护状态 | PR 已合并后批量维护一次 |
 
@@ -25,7 +25,7 @@
 ```bash
 uv sync --frozen --no-editable --extra dev --python 3.12
 .venv/bin/ruff check apps packages tests scripts
-.venv/bin/pytest -q tests/test_page_eval_baseline.py tests/test_retrieval_metrics.py
+.venv/bin/pytest -q tests/test_retrieval_pipeline.py tests/test_retrieval_routes.py tests/test_chat_service.py tests/test_retrieval_metrics.py
 # 涉及数据库的变更，在独立可销毁的 PG/Qdrant 测试环境中执行目标测试
 ```
 
