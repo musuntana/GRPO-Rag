@@ -46,4 +46,7 @@ jobs:
           tests/test_gateway_rerank.py
           tests/test_openai_compatible_provider.py
           tests/test_retrieval_metrics.py
+          tests/test_retrieval_pipeline.py
+          tests/test_retrieval_routes.py
+          tests/test_chat_service.py
           tests/test_cleanup_merged_branches.py

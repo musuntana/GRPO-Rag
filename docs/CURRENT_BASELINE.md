@@ -1,5 +1,7 @@
 # 当前工程基线（唯一实时状态入口）
 
+> **2026-10-24 二次检索排序修复**：PR #29 合并候选后按 refined query 统一排序，重复 ID 在预算裁剪前核验不可变来源，API/SSE 分离 fusion 与 rerank 分数。本地 133 passed、Ruff 通过，最终 HEAD CI 以 PR 为准。仅合成行为验证，不构成真实模型质量或 S1 退出。重检后再次 CRAG 判定仍是已知缺口，见 [审查与边界](validation/re-retrieval-review-2026-10-24.md)。
+
 > **2026-10-23 Linux ingest worker 真实网关增量**：在 `d6e74f2` 的 `codex/s1-upload-journey-contract` 工作树中，显式开启的开发 ingest worker 已在 Linux `aarch64` 容器内通过真实 `process_one_task` → `ProcessRunner` → 子进程 `ragos.runtime.ingest_job` 路径，经租户 `ModelRouter` 调用本机 Docker Model Runner 的 Qwen3 Embedding，写入真实 PostgreSQL 17/Qdrant 1.19.1。单任务 **PASS**：`attempts=1`、manifest `indexed`、PG/vector digest 相同、2 个 1024 维 point、子进程向量与独立真实模型调用 cosine `0.99999979`、`key_pool_rows=0`、任务 `1.459s`。Linux 定向 **52 passed**、真实 PG/Qdrant 集成 **170 passed**、全量 **1115 passed**，Ruff 通过；默认关闭、生产/非 Linux/错误 profile/version/provider 绑定拒绝及 hash 测试路径均有测试覆盖。仅合成纯文本与本地端点，未验收上传/UI/PDF 解析/企业语料/生产授权/检索质量/GRPO，不构成 S1 退出。源码哈希、环境、命令和回滚见 [Linux ingest 验收](validation/s1-linux-ingest-gateway-2026-10-23.md)；最终提交 CI 需重核，不能套用工作树哈希。
 > **2026-10-23 已合入 PR #28 验收**：基于 `d6e74f2`，新增默认关闭的真实模型/已发布证据验收。两页合成 PDF 经真实 ModelRouter/数据库模型绑定、Qwen Embedding、PG 发布与 Qdrant HTTP 检索回填，专项 3 passed/7 次实际 embedding 请求；跨租户、未绑定模型及错误版本负例通过。详见 [证据与边界](validation/s1-real-published-model-evidence-2026-10-23.md)。尚未证明生产 RLS/鉴权、隔离 worker、真实语料质量或完整 UI；扩大本地回归有一个已独立复现的 macOS/Linux runner 基线失败，不能称全套通过。
 

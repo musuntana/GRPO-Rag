@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from itertools import zip_longest
 from uuid import UUID
 
 from ragos.core.errors import ValidationError
@@ -28,7 +29,7 @@ from ragos.retrieval.query.types import ConversationTurn, QueryPlan
 from ragos.retrieval.recall.parents import ParentResolver, ResolvedParents
 from ragos.retrieval.refine import RefineFn, RefineRequest, deterministic_refine
 from ragos.retrieval.reranker import RerankFn, RerankResult, rerank, select_evidence
-from ragos.retrieval.types import RetrieverProfile, ScoredChunk
+from ragos.retrieval.types import RetrieverProfile, ScoredChunk, same_evidence_lineage
 from ragos.retrieval.verify import EntailmentFn, citation_counts, verify_citations
 
 LOGGER = get_logger(__name__)
@@ -50,7 +51,12 @@ class RetrievalExplain:
     rewritten_query: str
     per_channel_counts: dict[str, int] = field(default_factory=dict)
     channel_budgets: dict[str, float] = field(default_factory=dict)
+    #: Raw fused scores before model reranking, for the original query.
     fusion_scores: dict[str, float] = field(default_factory=dict)
+    #: Actual model scores from the final reranker; empty when identity ranking is used.
+    rerank_scores: dict[str, float] = field(default_factory=dict)
+    #: Raw fused scores for the refined-query recall pass; not comparable to fusion_scores.
+    re_retrieval_fusion_scores: dict[str, float] = field(default_factory=dict)
     rerank_depth: int = 0
     rerank_model_profile: str | None = None
     gate_verdict: str | None = None
@@ -76,6 +82,7 @@ class RetrievalExplain:
     refined_query: str | None = None
     re_retrieval_attempted: bool = False
     re_retrieval_added_chunks: int = 0
+    re_retrieval_channel_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -146,9 +153,11 @@ class RAGPipeline:
         ranked = await self._retrieve_and_rerank(plan, profile, tenant_ctx)
         explain.per_channel_counts = {name: len(chunks) for name, chunks in ranked.channels.items()}
         explain.channel_budgets = dict(profile.channel_budgets)
-        explain.fusion_scores = {
-            str(c.chunk_id): c.score for c in ranked.reranked.ranked[: profile.top_k_rerank]
-        }
+        explain.fusion_scores = {str(c.chunk_id): c.score for c in ranked.fused}
+        if ranked.reranked.rerank_model_profile is not None:
+            explain.rerank_scores = {
+                str(c.chunk_id): c.score for c in ranked.reranked.ranked
+            }
         explain.rerank_depth = ranked.reranked.depth
         explain.rerank_model_profile = ranked.reranked.rerank_model_profile
 
@@ -188,7 +197,7 @@ class RAGPipeline:
 
         final_ranked = ranked.reranked
         if gate is not None and gate.action == GateAction.RE_RETRIEVE:
-            retry = await self._retrieve_and_rerank(
+            retry_channels, retry_fused = await self._retrieve_and_fuse(
                 QueryPlan(
                     strategy=plan.strategy,
                     primary=refined,
@@ -200,15 +209,45 @@ class RAGPipeline:
                 profile,
                 tenant_ctx,
             )
+            _validate_candidate_lineage(
+                ranked.channels,
+                retry_channels,
+                error_message="cross-pass evidence has conflicting source lineage",
+            )
             explain.re_retrieval_attempted = True
-            seen = {c.chunk_id for c in final_ranked.ranked}
-            added = [c for c in retry.reranked.ranked if c.chunk_id not in seen]
+            explain.recall_queries.append(refined)
+            explain.re_retrieval_channel_counts = {
+                name: len(chunks) for name, chunks in retry_channels.items()
+            }
+            explain.re_retrieval_fusion_scores = {
+                str(c.chunk_id): c.score for c in retry_fused
+            }
+            seen = {c.chunk_id for c in ranked.fused}
+            added = [c for c in retry_fused if c.chunk_id not in seen]
             explain.re_retrieval_added_chunks = len(added)
-            final_ranked = RerankResult(
-                query=refined,
-                ranked=final_ranked.ranked + added,
-                rerank_model_profile=final_ranked.rerank_model_profile,
-                depth=max(final_ranked.depth, retry.reranked.depth),
+            # Validate shared chunk IDs on every second pass, even when the
+            # retry contributes no new IDs. Preserve the first pass's reranked
+            # shortlist before its fused tail, so the bounded retry pool does
+            # not discard an original reranker winner solely due to fusion rank.
+            first_pass_ids = {c.chunk_id for c in ranked.reranked.ranked}
+            first_pass_candidates = [
+                *ranked.reranked.ranked,
+                *(c for c in ranked.fused if c.chunk_id not in first_pass_ids),
+            ]
+            combined = _interleave_unique(retry_fused, first_pass_candidates)
+            final_ranked = await rerank(
+                refined, combined, profile, tenant_ctx, reranker=self.reranker
+            )
+            explain.rerank_depth = final_ranked.depth
+            explain.rerank_model_profile = final_ranked.rerank_model_profile
+            # Keep final reranker scores aligned with evidence selection; retain each
+            # query's independent fusion scores above for stage-by-stage diagnosis.
+            explain.rerank_scores = (
+                {
+                    str(c.chunk_id): c.score for c in final_ranked.ranked
+                }
+                if final_ranked.rerank_model_profile is not None
+                else {}
             )
 
         selected = select_evidence(final_ranked.ranked, profile)
@@ -293,11 +332,23 @@ class RAGPipeline:
         profile: RetrieverProfile,
         tenant_ctx: TenantContext,
     ) -> _RecallPass:
+        channels, fused = await self._retrieve_and_fuse(plan, profile, tenant_ctx)
+        reranked = await rerank(plan.primary, fused, profile, tenant_ctx, reranker=self.reranker)
+        return _RecallPass(channels=channels, fused=fused, reranked=reranked)
+
+    async def _retrieve_and_fuse(
+        self,
+        plan: QueryPlan,
+        profile: RetrieverProfile,
+        tenant_ctx: TenantContext,
+    ) -> tuple[dict[str, list[ScoredChunk]], list[ScoredChunk]]:
         channels = await self._recall(plan, profile, tenant_ctx)
+        # Validate every recalled candidate before budget trimming can hide a
+        # conflicting duplicate ID in a lower-ranked channel result.
+        _validate_candidate_lineage(channels)
         trimmed, _allocations = allocate_by_budget(channels, profile.channel_budgets)
         fused = self.fusioner.fuse(trimmed, profile.fusion_config)
-        reranked = await rerank(plan.primary, fused, profile, tenant_ctx, reranker=self.reranker)
-        return _RecallPass(channels=channels, reranked=reranked)
+        return channels, fused
 
     async def _recall(
         self,
@@ -323,6 +374,8 @@ class RAGPipeline:
             for query in plan.queries:
                 for chunk in await fn(query, profile, tenant_ctx):
                     existing = merged.get(chunk.chunk_id)
+                    if existing is not None and not same_evidence_lineage(existing, chunk):
+                        raise ValidationError("same chunk id has conflicting evidence lineage")
                     if existing is None or chunk.score > existing.score:
                         merged[chunk.chunk_id] = chunk
             channels[name] = list(merged.values())
@@ -369,7 +422,46 @@ class _RecallPass:
     """
 
     channels: dict[str, list[ScoredChunk]]
+    fused: list[ScoredChunk]
     reranked: RerankResult
+
+
+def _validate_candidate_lineage(
+    *channel_sets: dict[str, list[ScoredChunk]],
+    error_message: str = "same chunk id has conflicting evidence lineage",
+) -> None:
+    """Fail closed on conflicting evidence before ranking/budget filters can hide it."""
+    seen: dict[UUID, ScoredChunk] = {}
+    for channels in channel_sets:
+        for chunks in channels.values():
+            for chunk in chunks:
+                previous = seen.get(chunk.chunk_id)
+                if previous is not None and not same_evidence_lineage(previous, chunk):
+                    raise ValidationError(error_message)
+                seen[chunk.chunk_id] = chunk
+
+
+def _interleave_unique(
+    preferred: list[ScoredChunk], fallback: list[ScoredChunk]
+) -> list[ScoredChunk]:
+    """Give each query's candidates a fair share of the bounded rerank window.
+
+    Preserve immutable evidence lineage if a chunk appears in both passes.
+    """
+    merged: list[ScoredChunk] = []
+    seen: dict[UUID, ScoredChunk] = {}
+    for pair in zip_longest(preferred, fallback):
+        for chunk in pair:
+            if chunk is None:
+                continue
+            previous = seen.get(chunk.chunk_id)
+            if previous is not None:
+                if not same_evidence_lineage(previous, chunk):
+                    raise ValidationError("cross-pass evidence has conflicting source lineage")
+                continue
+            seen[chunk.chunk_id] = chunk
+            merged.append(chunk)
+    return merged
 
 
 def _as_turns(
