@@ -209,6 +209,11 @@ class RAGPipeline:
                 profile,
                 tenant_ctx,
             )
+            _validate_candidate_lineage(
+                ranked.channels,
+                retry_channels,
+                error_message="cross-pass evidence has conflicting source lineage",
+            )
             explain.re_retrieval_attempted = True
             explain.recall_queries.append(refined)
             explain.re_retrieval_channel_counts = {
@@ -338,6 +343,9 @@ class RAGPipeline:
         tenant_ctx: TenantContext,
     ) -> tuple[dict[str, list[ScoredChunk]], list[ScoredChunk]]:
         channels = await self._recall(plan, profile, tenant_ctx)
+        # Validate every recalled candidate before budget trimming can hide a
+        # conflicting duplicate ID in a lower-ranked channel result.
+        _validate_candidate_lineage(channels)
         trimmed, _allocations = allocate_by_budget(channels, profile.channel_budgets)
         fused = self.fusioner.fuse(trimmed, profile.fusion_config)
         return channels, fused
@@ -416,6 +424,21 @@ class _RecallPass:
     channels: dict[str, list[ScoredChunk]]
     fused: list[ScoredChunk]
     reranked: RerankResult
+
+
+def _validate_candidate_lineage(
+    *channel_sets: dict[str, list[ScoredChunk]],
+    error_message: str = "same chunk id has conflicting evidence lineage",
+) -> None:
+    """Fail closed on conflicting evidence before ranking/budget filters can hide it."""
+    seen: dict[UUID, ScoredChunk] = {}
+    for channels in channel_sets:
+        for chunks in channels.values():
+            for chunk in chunks:
+                previous = seen.get(chunk.chunk_id)
+                if previous is not None and not same_evidence_lineage(previous, chunk):
+                    raise ValidationError(error_message)
+                seen[chunk.chunk_id] = chunk
 
 
 def _interleave_unique(
