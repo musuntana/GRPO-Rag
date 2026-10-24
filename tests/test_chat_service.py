@@ -320,6 +320,23 @@ def test_the_retrieval_event_carries_the_per_channel_counts(tmp_path) -> None:
     assert retrieval.data["per_channel_counts"] == {"lexical": 1, "memory": 2}
 
 
+def test_the_retrieval_event_reports_refined_query_diagnostics(tmp_path) -> None:
+    result = _result()
+    result.retrieval_explain.recall_queries = ["revenue", "refined revenue"]
+    result.retrieval_explain.re_retrieval_attempted = True
+    result.retrieval_explain.re_retrieval_added_chunks = 2
+    result.retrieval_explain.re_retrieval_channel_counts = {"lexical": 3, "dense": 4}
+    service, *_ = _service(tmp_path, result=result)
+
+    events = _run(service)
+    retrieval = next(e for e in events if e.event == "retrieval_completed")
+
+    assert retrieval.data["recall_queries"] == ["revenue", "refined revenue"]
+    assert retrieval.data["re_retrieval_attempted"] is True
+    assert retrieval.data["re_retrieval_added_chunks"] == 2
+    assert retrieval.data["re_retrieval_channel_counts"] == {"lexical": 3, "dense": 4}
+
+
 def test_the_rerank_event_reports_parent_expansion(tmp_path) -> None:
     service, *_ = _service(tmp_path)
 
