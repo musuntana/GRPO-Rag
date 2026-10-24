@@ -34,6 +34,7 @@ from ragos.retrieval.fusion import Fusioner, allocate_by_budget, validate_budget
 from ragos.retrieval.grader import CragThresholds, GateAction, RelevanceGrader
 from ragos.retrieval.identity import EvidenceIdentity
 from ragos.retrieval.pipeline import RAGPipeline, RAGResult
+from ragos.retrieval.query.types import QueryPlan
 from ragos.retrieval.reranker import select_evidence
 from ragos.retrieval.types import (
     EvalCase,
@@ -120,6 +121,50 @@ def _profile(**overrides) -> RetrieverProfile:
     fields.update(overrides)
     profile = RetrieverProfile(**fields)
     return profile
+
+
+# -- multi-query recall lineage -------------------------------------------
+
+
+@pytest.mark.parametrize("updated_score", [0.2, 1.2])
+def test_subqueries_reject_conflicting_lineage_before_score_selection(
+    updated_score: float,
+) -> None:
+    """A lower- or higher-scored duplicate ID cannot replace immutable source data."""
+    ctx = _ctx()
+    original = _chunk("Stable immutable source page", score=0.8)
+    changed = replace(original, score=updated_score, source_text="Tampered source text")
+
+    async def recall(query, _profile, _context):
+        return [original] if query == "first" else [changed]
+
+    profile = _profile(recall_channels=["dense"], channel_budgets={"dense": 1.0})
+    profile.tenant_id = ctx.tenant_id
+    plan = QueryPlan(strategy="decompose", primary="question", queries=("first", "second"))
+    pipeline = RAGPipeline(recall_channels={"dense": recall}, generator=_gen)
+
+    with pytest.raises(ValidationError, match="same chunk id has conflicting evidence lineage"):
+        asyncio.run(pipeline._recall(plan, profile, ctx))
+
+
+def test_subqueries_allow_same_lineage_and_retain_best_score() -> None:
+    """A repeated ID with unchanged source data is valid and consumes one slot."""
+    ctx = _ctx()
+    original = _chunk("Stable immutable source page", score=0.2)
+    higher = replace(original, score=0.9)
+
+    async def recall(query, _profile, _context):
+        return [original] if query == "first" else [higher]
+
+    profile = _profile(recall_channels=["dense"], channel_budgets={"dense": 1.0})
+    profile.tenant_id = ctx.tenant_id
+    plan = QueryPlan(strategy="decompose", primary="question", queries=("first", "second"))
+    pipeline = RAGPipeline(recall_channels={"dense": recall}, generator=_gen)
+
+    channels = asyncio.run(pipeline._recall(plan, profile, ctx))
+    assert len(channels["dense"]) == 1
+    assert channels["dense"][0].chunk_id == original.chunk_id
+    assert channels["dense"][0].score == 0.9
 
 
 # -- budgets ----------------------------------------------------------------
