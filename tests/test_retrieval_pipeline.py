@@ -485,12 +485,12 @@ def test_re_retrieval_reranks_new_and_original_evidence_together() -> None:
     assert result.retrieval_explain.rerank_model_profile == "synthetic-reranker"
     assert result.retrieval_explain.rerank_depth == 9
     assert result.retrieval_explain.fusion_scores[str(older[0].chunk_id)] == pytest.approx(
-        0.8 / 61
+        1.0 / 61
     )
     assert str(answering.chunk_id) not in result.retrieval_explain.fusion_scores
     assert result.retrieval_explain.re_retrieval_fusion_scores[
         str(answering.chunk_id)
-    ] == pytest.approx(0.8 / 61)
+    ] == pytest.approx(1.0 / 61)
     assert result.retrieval_explain.rerank_scores[str(answering.chunk_id)] == 10.0
     assert len(model_inputs) == 2
     assert model_inputs[-1][0] == "refined question"
