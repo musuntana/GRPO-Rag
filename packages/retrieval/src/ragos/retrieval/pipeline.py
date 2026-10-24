@@ -366,6 +366,8 @@ class RAGPipeline:
             for query in plan.queries:
                 for chunk in await fn(query, profile, tenant_ctx):
                     existing = merged.get(chunk.chunk_id)
+                    if existing is not None and not same_evidence_lineage(existing, chunk):
+                        raise ValidationError("same chunk id has conflicting evidence lineage")
                     if existing is None or chunk.score > existing.score:
                         merged[chunk.chunk_id] = chunk
             channels[name] = list(merged.values())
