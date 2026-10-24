@@ -547,6 +547,30 @@ def test_re_retrieval_rejects_duplicate_only_source_lineage_drift() -> None:
         asyncio.run(pipeline.run("original question", ctx, profile))
 
 
+def test_re_retrieval_rejects_duplicate_only_chunk_text_drift() -> None:
+    """A repeated chunk ID cannot silently change chunk text within one source version."""
+    ctx = _ctx()
+    existing = _chunk("Original immutable page")
+    conflicting = replace(existing, text="Modified chunk content", source_text=existing.source_text)
+
+    async def recall(query, _profile, _context):
+        return [conflicting] if query == "refined question" else [existing]
+
+    async def refine(_request, _context):
+        return "refined question"
+
+    profile = _profile(channel_budgets={"dense": 1.0})
+    profile.tenant_id = ctx.tenant_id
+    pipeline = RAGPipeline(
+        recall_channels={"dense": recall},
+        generator=_gen,
+        grader=RelevanceGrader(judge=_judge([1]), thresholds=CragThresholds()),
+        refiner=refine,
+    )
+    with pytest.raises(ValidationError, match="cross-pass evidence has conflicting source lineage"):
+        asyncio.run(pipeline.run("original question", ctx, profile))
+
+
 def test_an_unparseable_grader_response_defaults_to_irrelevant() -> None:
     """A missing grade must not become evidence that a passage was relevant."""
 
