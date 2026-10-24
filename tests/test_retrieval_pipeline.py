@@ -14,7 +14,7 @@ from dataclasses import replace
 from uuid import UUID, uuid4, uuid5
 
 import pytest
-from ragos.core.errors import ValidationError
+from ragos.core.errors import ProviderError, ValidationError
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.citation import CitationStatus, EvidenceSet
 from ragos.retrieval.eval_svc import (
@@ -433,13 +433,22 @@ def test_top_k_generate_is_not_hardcoded() -> None:
 # -- pipeline ---------------------------------------------------------------
 
 
-def _judge(grades: list[int]):
+def _judge(grades: list[int], *, retry_grade: int | None = None):
     import re
 
+    calls = 0
+
     async def judge(query: str, messages: list[dict], _ctx: TenantContext) -> str:
+        nonlocal calls
+        calls += 1
         ids = re.findall(r'"chunk_id": "([^"]+)"', messages[1]["content"])
+        current = [retry_grade] * len(ids) if calls > 1 and retry_grade is not None else grades
         return json.dumps(
-            {"grades": [{"chunk_id": cid, "grade": g} for cid, g in zip(ids, grades, strict=False)]}
+            {
+                "grades": [
+                    {"chunk_id": cid, "grade": g} for cid, g in zip(ids, current, strict=False)
+                ]
+            }
         )
 
     return judge
@@ -513,11 +522,13 @@ def test_the_refuse_path_still_returns_the_full_result_shape() -> None:
     assert result.retrieval_explain.gate_verdict == "irrelevant"
 
 
-def test_the_ambiguous_path_proceeds_after_grading() -> None:
-    result = _run(grades=[1, 1])
+def test_the_ambiguous_path_refuses_when_retry_is_still_ambiguous() -> None:
+    # This helper returns fresh chunk IDs on retry, so the union has four candidates.
+    result = _run(grades=[1] * 4)
 
-    assert result.gate.action == GateAction.RE_RETRIEVE
-    assert result.abstained is False
+    assert result.gate.action == GateAction.REFUSE
+    assert result.gate.verdict == "ambiguous"
+    assert result.abstained is True
 
 
 def test_re_retrieval_reranks_new_and_original_evidence_together() -> None:
@@ -553,7 +564,9 @@ def test_re_retrieval_reranks_new_and_original_evidence_together() -> None:
         RAGPipeline(
             recall_channels={"dense": recall},
             generator=generate,
-            grader=RelevanceGrader(judge=_judge([1] * 10), thresholds=CragThresholds()),
+            grader=RelevanceGrader(
+                judge=_judge([1] * 10, retry_grade=3), thresholds=CragThresholds()
+            ),
             reranker=rerank_model,
             refiner=refine,
         ).run("original question", ctx, profile)
@@ -609,7 +622,9 @@ def test_re_retrieval_reranks_existing_candidates_for_refined_query() -> None:
         RAGPipeline(
             recall_channels={"dense": recall},
             generator=_gen,
-            grader=RelevanceGrader(judge=_judge([1, 1]), thresholds=CragThresholds()),
+            grader=RelevanceGrader(
+                judge=_judge([1, 1], retry_grade=3), thresholds=CragThresholds()
+            ),
             reranker=rerank_model,
             refiner=refine,
         ).run("original question", ctx, profile)
@@ -663,7 +678,9 @@ def test_re_retrieval_gives_new_evidence_a_slot_when_top_candidate_overlaps() ->
         RAGPipeline(
             recall_channels={"dense": recall},
             generator=_gen,
-            grader=RelevanceGrader(judge=_judge([1, 1]), thresholds=CragThresholds()),
+            grader=RelevanceGrader(
+                judge=_judge([1, 1], retry_grade=3), thresholds=CragThresholds()
+            ),
             reranker=rerank_model,
             refiner=refine,
         ).run("original question", ctx, profile)
@@ -718,7 +735,9 @@ def test_re_retrieval_preserves_first_pass_reranker_winner() -> None:
         RAGPipeline(
             recall_channels={"dense": recall},
             generator=_gen,
-            grader=RelevanceGrader(judge=_judge([1, 1]), thresholds=CragThresholds()),
+            grader=RelevanceGrader(
+                judge=_judge([1, 1], retry_grade=3), thresholds=CragThresholds()
+            ),
             reranker=rerank_model,
             refiner=refine,
         ).run("original question", ctx, profile)
@@ -752,7 +771,9 @@ def test_re_retrieval_without_reranker_keeps_new_and_old_evidence() -> None:
         RAGPipeline(
             recall_channels={"dense": recall},
             generator=generate,
-            grader=RelevanceGrader(judge=_judge([1] * 4), thresholds=CragThresholds()),
+            grader=RelevanceGrader(
+                judge=_judge([1] * 4, retry_grade=3), thresholds=CragThresholds()
+            ),
             refiner=refine,
         ).run("original question", ctx, profile)
     )
@@ -872,26 +893,44 @@ def test_re_retrieval_rejects_conflicting_lineage_outside_retry_budget() -> None
         asyncio.run(pipeline.run("original question", ctx, profile))
 
 
-def test_an_unparseable_grader_response_defaults_to_irrelevant() -> None:
-    """A missing grade must not become evidence that a passage was relevant."""
+@pytest.mark.parametrize("payload", [
+    "not JSON", "[]", "{}", '{"grades": null}', '{"grades": {}}',
+    '{"grades": [null]}', '{"grades": []}',
+])
+def test_invalid_judge_payload_raises_provider_error(payload):
+    async def judge(*args):
+        return payload
 
-    async def garbage(_query, _messages, _ctx):
-        return "I think it's fine."
+    grader = RelevanceGrader(judge=judge, thresholds=CragThresholds())
+    with pytest.raises(ProviderError, match="judge response"):
+        asyncio.run(grader.grade("q", [_chunk("evidence")], _ctx()))
 
-    ctx = _ctx()
 
-    async def recall(_q, _p, _c):
-        return [_chunk("a")]
+@pytest.mark.parametrize("invalid_grade", [True, 1.5, "3", -1, 4, None])
+def test_invalid_judge_grade_raises_provider_error(invalid_grade):
+    chunk = _chunk("evidence")
 
-    grader = RelevanceGrader(judge=garbage, thresholds=CragThresholds())
-    result = asyncio.run(
-        grader.grade("q", [_chunk("a")], ctx),
-    )
-    del recall
+    async def judge(*args):
+        return json.dumps({"grades": [{"chunk_id": str(chunk.chunk_id), "grade": invalid_grade}]})
 
-    from ragos.retrieval.grader import GateVerdict
+    with pytest.raises(ProviderError, match="judge response"):
+        asyncio.run(RelevanceGrader(judge=judge, thresholds=CragThresholds()).grade(
+            "q", [chunk], _ctx()
+        ))
 
-    assert result.verdict == GateVerdict.IRRELEVANT
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_foreign_or_duplicate_judge_id_raises_provider_error(duplicate):
+    chunk = _chunk("evidence")
+    entry = {"chunk_id": str(chunk.chunk_id) if duplicate else str(uuid4()), "grade": 3}
+
+    async def judge(*args):
+        return json.dumps({"grades": [entry, entry] if duplicate else [entry]})
+
+    with pytest.raises(ProviderError, match="judge response"):
+        asyncio.run(RelevanceGrader(judge=judge, thresholds=CragThresholds()).grade(
+            "q", [chunk], _ctx()
+        ))
 
 
 def test_pipeline_rejects_a_profile_with_invalid_budgets() -> None:
@@ -1115,3 +1154,89 @@ def test_semantic_verification_is_opt_in_per_profile() -> None:
 
     assert off.citations[0].status == CitationStatus.UNVERIFIED
     assert on.citations[0].status == CitationStatus.VERIFIED
+
+
+@pytest.mark.parametrize("final_grade,verdict,abstained", [
+    (3, "relevant", False),
+    (1, "ambiguous", True),
+    (0, "irrelevant", True),
+])
+def test_retry_regrades_final_candidates_before_generation(final_grade, verdict, abstained):
+    ctx = _ctx()
+    first = _chunk("Partial initial evidence")
+    second = _chunk("New refined-query evidence")
+    recall_queries, judge_inputs, generated = [], [], []
+
+    async def recall(query, _profile, _context):
+        recall_queries.append(query)
+        return [first] if len(recall_queries) == 1 else [second]
+
+    async def refine(_request, _context):
+        return "refined question"
+
+    async def judge(query, messages, context):
+        payload = json.loads(messages[1]["content"])
+        judge_inputs.append((query, payload["passages"], context))
+        grade = 1 if len(judge_inputs) == 1 else final_grade
+        return json.dumps({"grades": [
+            {"chunk_id": item["chunk_id"], "grade": grade}
+            for item in payload["passages"]
+        ]})
+
+    async def generate(query, evidence, context):
+        generated.append((query, evidence, context))
+        return "Supported answer [1]."
+
+    profile = _profile(channel_budgets={"dense": 1.0}, top_k_generate=2)
+    profile.tenant_id = ctx.tenant_id
+    result = asyncio.run(RAGPipeline(
+        recall_channels={"dense": recall}, generator=generate,
+        grader=RelevanceGrader(judge=judge, thresholds=CragThresholds()), refiner=refine,
+    ).run("original question", ctx, profile))
+
+    assert recall_queries == ["original question", "refined question"]
+    assert [item[0] for item in judge_inputs] == recall_queries
+    assert all(item[2] is ctx for item in judge_inputs)
+    assert str(second.chunk_id) in {item["chunk_id"] for item in judge_inputs[1][1]}
+    assert result.abstained is abstained
+    assert result.gate.verdict == verdict
+    assert result.gate.action == (GateAction.REFUSE if abstained else GateAction.PROCEED)
+    assert result.retrieval_explain.gate_verdict == verdict
+    assert result.retrieval_explain.gate_action == result.gate.action
+    assert result.retrieval_explain.re_retrieval_attempted
+    assert len(generated) == (0 if abstained else 1)
+    if abstained:
+        assert result.evidence == ()
+        assert result.citations == []
+    else:
+        assert generated[0][0] == "refined question"
+
+
+@pytest.mark.parametrize("failure", ["provider", "malformed"])
+def test_retry_judge_failure_propagates_without_generation(failure):
+
+    ctx = _ctx()
+    calls = []
+
+    async def recall(_query, _profile, _context):
+        return [_chunk("Partial evidence")]
+
+    async def judge(_query, messages, _context):
+        calls.append("judge")
+        if len(calls) == 2:
+            if failure == "malformed":
+                return "not JSON"
+            raise ProviderError("judge unavailable")
+        return await _judge([1])(_query, messages, _context)
+
+    async def generate(*args):
+        pytest.fail("judge failure must not reach generation")
+
+    profile = _profile(channel_budgets={"dense": 1.0})
+    profile.tenant_id = ctx.tenant_id
+    with pytest.raises(ProviderError):
+        asyncio.run(RAGPipeline(
+            recall_channels={"dense": recall}, generator=generate,
+            grader=RelevanceGrader(judge=judge, thresholds=CragThresholds()),
+        ).run("question", ctx, profile))
+    assert calls == ["judge", "judge"]

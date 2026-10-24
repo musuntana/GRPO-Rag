@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from uuid import UUID
 
+from ragos.core.errors import ProviderError
 from ragos.core.tenant import TenantContext
 from ragos.retrieval.types import CragThresholds, ScoredChunk
 
@@ -86,55 +87,45 @@ def build_rails_request(query: str, chunks: list[ScoredChunk]) -> list[dict]:
 
 
 def parse_rails_response(raw: str, chunks: list[ScoredChunk]) -> list[GradedChunk]:
-    """Parse judge output into grades, defaulting an unparseable grade to 0.
+    """Require a complete, unambiguous grade for every supplied candidate.
 
-    Defaults downward on purpose. A missing or malformed grade must not become
-    evidence that a passage was relevant.
+    A protocol failure is a provider error, not a relevance observation. Never
+    coerce, clamp or fill missing grades to turn an outage into normal abstention.
     """
     by_id = {str(c.chunk_id): c for c in chunks}
     try:
         payload = json.loads(raw)
-        entries = payload.get("grades", [])
-    except (json.JSONDecodeError, AttributeError):
-        entries = []
+    except (json.JSONDecodeError, TypeError, RecursionError):
+        raise ProviderError("invalid judge response") from None
+    if not isinstance(payload, dict) or not isinstance(payload.get("grades"), list):
+        raise ProviderError("invalid judge response")
 
     grades: list[GradedChunk] = []
     seen: set[str] = set()
-    for entry in entries:
+    for entry in payload["grades"]:
         if not isinstance(entry, dict):
-            continue
-        chunk_id = str(entry.get("chunk_id", ""))
-        chunk = by_id.get(chunk_id)
-        if chunk is None:
-            continue
-        try:
-            grade = int(entry.get("grade", 0))
-        except (TypeError, ValueError):
-            grade = 0
-        grade = max(0, min(3, grade))
+            raise ProviderError("invalid judge response")
+        chunk_id = entry.get("chunk_id")
+        grade = entry.get("grade")
+        if (
+            not isinstance(chunk_id, str)
+            or chunk_id not in by_id
+            or chunk_id in seen
+            or type(grade) is not int
+            or not 0 <= grade <= 3
+        ):
+            raise ProviderError("invalid judge response")
+        chunk = by_id[chunk_id]
         seen.add(chunk_id)
-        grades.append(
-            GradedChunk(
-                chunk_id=chunk.chunk_id,
-                doc_id=chunk.doc_id,
-                grade=grade,
-                score=chunk.score,
-                page_no=chunk.page_no,
-            )
-        )
-
-    for chunk_id, chunk in by_id.items():
-        if chunk_id in seen:
-            continue
-        grades.append(
-            GradedChunk(
-                chunk_id=chunk.chunk_id,
-                doc_id=chunk.doc_id,
-                grade=0,
-                score=chunk.score,
-                page_no=chunk.page_no,
-            )
-        )
+        grades.append(GradedChunk(
+            chunk_id=chunk.chunk_id,
+            doc_id=chunk.doc_id,
+            grade=grade,
+            score=chunk.score,
+            page_no=chunk.page_no,
+        ))
+    if seen != set(by_id):
+        raise ProviderError("incomplete judge response")
     return grades
 
 
