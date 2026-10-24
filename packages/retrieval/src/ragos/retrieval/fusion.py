@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ragos.core.errors import ValidationError
-from ragos.retrieval.types import FusionConfig, ScoredChunk
+from ragos.retrieval.types import FusionConfig, ScoredChunk, same_evidence_lineage
 
 
 @dataclass(slots=True)
@@ -205,13 +205,13 @@ class Fusioner:
         channels: Mapping[str, list[ScoredChunk]],
         config: FusionConfig,
     ) -> list[ScoredChunk]:
-        identities = {}
+        identities: dict[object, ScoredChunk] = {}
         for chunks in channels.values():
             for chunk in chunks:
-                lineage = (chunk.source_identity, chunk.source_text)
-                if chunk.chunk_id in identities and identities[chunk.chunk_id] != lineage:
+                previous = identities.get(chunk.chunk_id)
+                if previous is not None and not same_evidence_lineage(previous, chunk):
                     raise ValidationError("same chunk id has conflicting evidence lineage")
-                identities[chunk.chunk_id] = lineage
+                identities[chunk.chunk_id] = chunk
         active = {name: chunks for name, chunks in channels.items() if chunks}
         if not active:
             return []
