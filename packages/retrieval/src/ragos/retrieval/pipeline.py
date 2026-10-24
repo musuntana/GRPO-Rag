@@ -189,7 +189,7 @@ class RAGPipeline:
 
         final_ranked = ranked.reranked
         if gate is not None and gate.action == GateAction.RE_RETRIEVE:
-            retry_channels, retry_fused = await self._retrieve_and_fuse(
+            _, retry_fused = await self._retrieve_and_fuse(
                 QueryPlan(
                     strategy=plan.strategy,
                     primary=refined,
@@ -401,9 +401,23 @@ def _interleave_unique(
                 continue
             previous = seen.get(chunk.chunk_id)
             if previous is not None:
-                if (
-                    previous.source_identity != chunk.source_identity
-                    or previous.source_text != chunk.source_text
+                lineage_fields = (
+                    "doc_id",
+                    "kb_id",
+                    "text",
+                    "layer",
+                    "parent_chunk_id",
+                    "page_no",
+                    "page_count",
+                    "start_char_idx",
+                    "end_char_idx",
+                    "element_type",
+                    "source_identity",
+                    "source_text",
+                )
+                if any(
+                    getattr(previous, name) != getattr(chunk, name)
+                    for name in lineage_fields
                 ):
                     raise ValidationError("cross-pass evidence has conflicting source lineage")
                 continue
