@@ -533,6 +533,60 @@ def test_re_retrieval_reranks_existing_candidates_for_refined_query() -> None:
     assert rerank_queries[-1] == "refined question"
 
 
+def test_re_retrieval_preserves_first_pass_reranker_winner() -> None:
+    """A bounded retry pool must retain the first pass's strongest reranked candidate."""
+    ctx = _ctx()
+    first_fused = _chunk("First pass fusion winner", score=0.99)
+    first_reranked = _chunk("First pass reranker winner", score=0.98)
+    refined_best = _chunk("Refined-query candidate", score=0.99)
+    refined_other = _chunk("Another refined-query candidate", score=0.98)
+    model_inputs: list[tuple[str, set[UUID]]] = []
+
+    async def recall(query, _profile, _context):
+        return (
+            [refined_best, refined_other]
+            if query == "refined question"
+            else [first_fused, first_reranked]
+        )
+
+    async def refine(_request, _context):
+        return "refined question"
+
+    async def rerank_model(query, chunks, _context):
+        model_inputs.append((query, {item.chunk_id for item in chunks}))
+        preferred = (
+            first_reranked.chunk_id
+            if query == "original question"
+            else refined_best.chunk_id
+        )
+        for item in chunks:
+            item.score = 10.0 if item.chunk_id == preferred else 0.0
+        return sorted(chunks, key=lambda item: item.score, reverse=True)
+
+    profile = _profile(
+        channel_budgets={"dense": 1.0},
+        top_k_recall=10,
+        top_k_rerank=2,
+        top_k_generate=2,
+        rerank_model_profile="synthetic-reranker",
+    )
+    profile.tenant_id = ctx.tenant_id
+    asyncio.run(
+        RAGPipeline(
+            recall_channels={"dense": recall},
+            generator=_gen,
+            grader=RelevanceGrader(judge=_judge([1, 1]), thresholds=CragThresholds()),
+            reranker=rerank_model,
+            refiner=refine,
+        ).run("original question", ctx, profile)
+    )
+
+    assert len(model_inputs) == 2
+    assert first_reranked.chunk_id in model_inputs[0][1]
+    assert refined_best.chunk_id in model_inputs[1][1]
+    assert first_reranked.chunk_id in model_inputs[1][1]
+
+
 def test_re_retrieval_without_reranker_keeps_new_and_old_evidence() -> None:
     """The identity reranker must also give fresh evidence a Top-K opportunity."""
     ctx = _ctx()
