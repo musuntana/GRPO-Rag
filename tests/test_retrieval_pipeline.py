@@ -9,8 +9,8 @@ shape of result.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
 import json
+from dataclasses import replace
 from uuid import UUID, uuid4, uuid5
 
 import pytest
