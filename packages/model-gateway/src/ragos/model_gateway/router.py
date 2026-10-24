@@ -4,7 +4,7 @@ import math
 from typing import Any
 from uuid import UUID
 
-from ragos.core.config import get_settings
+from ragos.core.config import Settings, get_settings
 from ragos.core.errors import ProviderError, ValidationError
 from ragos.core.logging import get_logger
 from ragos.core.tenant import TenantContext
@@ -39,8 +39,11 @@ class ModelRouter:
         *,
         allow_test_stub: bool = False,
         local_model: LocalModelAdmission | None = None,
+        settings: Settings | None = None,
     ) -> None:
-        settings = get_settings()
+        # A child worker passes its server-built settings explicitly so no
+        # ambient .env or process configuration can change its model admission.
+        settings = settings if settings is not None else get_settings()
         if local_model is not None and settings.app_env != "dev":
             raise ValidationError("local model gateway may only run in development")
         if local_model is not None and settings.api_host not in {
