@@ -53,7 +53,7 @@ class RetrievalExplain:
     channel_budgets: dict[str, float] = field(default_factory=dict)
     #: Raw fused scores before model reranking, for the original query.
     fusion_scores: dict[str, float] = field(default_factory=dict)
-    #: Scores emitted by the final reranker (or identity ranking) for the selected pool.
+    #: Actual model scores from the final reranker; empty when identity ranking is used.
     rerank_scores: dict[str, float] = field(default_factory=dict)
     #: Raw fused scores for the refined-query recall pass; not comparable to fusion_scores.
     re_retrieval_fusion_scores: dict[str, float] = field(default_factory=dict)
@@ -154,9 +154,10 @@ class RAGPipeline:
         explain.per_channel_counts = {name: len(chunks) for name, chunks in ranked.channels.items()}
         explain.channel_budgets = dict(profile.channel_budgets)
         explain.fusion_scores = {str(c.chunk_id): c.score for c in ranked.fused}
-        explain.rerank_scores = {
-            str(c.chunk_id): c.score for c in ranked.reranked.ranked
-        }
+        if ranked.reranked.rerank_model_profile is not None:
+            explain.rerank_scores = {
+                str(c.chunk_id): c.score for c in ranked.reranked.ranked
+            }
         explain.rerank_depth = ranked.reranked.depth
         explain.rerank_model_profile = ranked.reranked.rerank_model_profile
 
@@ -236,9 +237,13 @@ class RAGPipeline:
             explain.rerank_model_profile = final_ranked.rerank_model_profile
             # Keep final reranker scores aligned with evidence selection; retain each
             # query's independent fusion scores above for stage-by-stage diagnosis.
-            explain.rerank_scores = {
-                str(c.chunk_id): c.score for c in final_ranked.ranked
-            }
+            explain.rerank_scores = (
+                {
+                    str(c.chunk_id): c.score for c in final_ranked.ranked
+                }
+                if final_ranked.rerank_model_profile is not None
+                else {}
+            )
 
         selected = select_evidence(final_ranked.ranked, profile)
         parents, parents_resolved = await self._expand(selected, tenant_ctx)
