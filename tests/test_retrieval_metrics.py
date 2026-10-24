@@ -303,3 +303,37 @@ def test_evaluate_retrieval_rejects_mismatched_lengths() -> None:
 
     with pytest.raises(ValueError, match="same length"):
         evaluate_retrieval([case], [])
+
+@pytest.mark.parametrize("baseline,candidate", [
+    ({}, {}),
+    ({"evidence_hit_rate": 0.5}, {}),
+    ({}, {"evidence_hit_rate": 0.5}),
+    ({"evidence_hit_rate": 0.5}, {"citation_accuracy": 0.9}),
+    ({"evidence_hit_rate": 0.5}, {"evidence_hit_rate": 0.6, "latency_ms": 1.0}),
+])
+def test_promotion_requires_nonempty_matching_metric_sets(baseline, candidate):
+    verdict = compare_bundles(baseline, candidate)
+    assert not verdict.promotable
+    assert verdict.regressions
+    assert verdict.improvements == {}
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("side", ["baseline", "candidate"])
+def test_nonfinite_metrics_cannot_promote(invalid, side):
+    values = {"baseline": {"evidence_hit_rate": 0.5},
+              "candidate": {"evidence_hit_rate": 0.6}}
+    values[side]["evidence_hit_rate"] = invalid
+    assert not compare_bundles(**values).promotable
+
+
+@pytest.mark.parametrize("epsilon", [float("nan"), float("inf"), -0.1])
+def test_invalid_comparison_tolerance_cannot_disable_regression_gate(epsilon):
+    assert not compare_bundles(
+        {"evidence_hit_rate": 0.9}, {"evidence_hit_rate": 0.1}, epsilon=epsilon
+    ).promotable
+
+
+def test_precision_improvement_promotes_and_regression_blocks():
+    assert compare_bundles({"precision_at_10": 0.5}, {"precision_at_10": 0.8}).promotable
+    assert not compare_bundles({"precision_at_10": 0.8}, {"precision_at_10": 0.5}).promotable
