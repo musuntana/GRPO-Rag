@@ -206,9 +206,15 @@ class RAGPipeline:
             added = [c for c in retry_fused if c.chunk_id not in seen]
             explain.re_retrieval_added_chunks = len(added)
             # Validate shared chunk IDs on every second pass, even when the
-            # retry contributes no new IDs. Both passes' fused candidates are
-            # merged before the single refined-query rerank.
-            combined = _interleave_unique(retry_fused, ranked.fused)
+            # retry contributes no new IDs. Preserve the first pass's reranked
+            # shortlist before its fused tail, so the bounded retry pool does
+            # not discard an original reranker winner solely due to fusion rank.
+            first_pass_ids = {c.chunk_id for c in ranked.reranked.ranked}
+            first_pass_candidates = [
+                *ranked.reranked.ranked,
+                *(c for c in ranked.fused if c.chunk_id not in first_pass_ids),
+            ]
+            combined = _interleave_unique(retry_fused, first_pass_candidates)
             final_ranked = await rerank(
                 refined, combined, profile, tenant_ctx, reranker=self.reranker
             )
