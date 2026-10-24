@@ -189,7 +189,7 @@ class RAGPipeline:
 
         final_ranked = ranked.reranked
         if gate is not None and gate.action == GateAction.RE_RETRIEVE:
-            retry = await self._retrieve_and_rerank(
+            retry_channels, retry_fused = await self._retrieve_and_fuse(
                 QueryPlan(
                     strategy=plan.strategy,
                     primary=refined,
@@ -202,23 +202,18 @@ class RAGPipeline:
                 tenant_ctx,
             )
             explain.re_retrieval_attempted = True
-            seen = {c.chunk_id for c in final_ranked.ranked}
-            added = [c for c in retry.reranked.ranked if c.chunk_id not in seen]
+            seen = {c.chunk_id for c in ranked.fused}
+            added = [c for c in retry_fused if c.chunk_id not in seen]
             explain.re_retrieval_added_chunks = len(added)
             # Validate shared chunk IDs on every second pass, even when the
-            # retry contributes no new IDs. Otherwise changed immutable source
-            # lineage can be silently ignored when added is empty.
-            combined = _interleave_unique(retry.reranked.ranked, final_ranked.ranked)
-            if added:
-                # Re-rank one bounded, deduplicated pool. Appending the retry to
-                # the first pass silently discards new pages at the Top-K cutoff.
-                # Interleaving gives both queries a chance in rerank's bounded
-                # window, without comparing scores from different queries.
-                final_ranked = await rerank(
-                    refined, combined, profile, tenant_ctx, reranker=self.reranker
-                )
-                explain.rerank_depth = final_ranked.depth
-                explain.rerank_model_profile = final_ranked.rerank_model_profile
+            # retry contributes no new IDs. Both passes' fused candidates are
+            # merged before the single refined-query rerank.
+            combined = _interleave_unique(retry_fused, ranked.fused)
+            final_ranked = await rerank(
+                refined, combined, profile, tenant_ctx, reranker=self.reranker
+            )
+            explain.rerank_depth = final_ranked.depth
+            explain.rerank_model_profile = final_ranked.rerank_model_profile
 
         selected = select_evidence(final_ranked.ranked, profile)
         parents, parents_resolved = await self._expand(selected, tenant_ctx)
@@ -302,11 +297,20 @@ class RAGPipeline:
         profile: RetrieverProfile,
         tenant_ctx: TenantContext,
     ) -> _RecallPass:
+        channels, fused = await self._retrieve_and_fuse(plan, profile, tenant_ctx)
+        reranked = await rerank(plan.primary, fused, profile, tenant_ctx, reranker=self.reranker)
+        return _RecallPass(channels=channels, fused=fused, reranked=reranked)
+
+    async def _retrieve_and_fuse(
+        self,
+        plan: QueryPlan,
+        profile: RetrieverProfile,
+        tenant_ctx: TenantContext,
+    ) -> tuple[dict[str, list[ScoredChunk]], list[ScoredChunk]]:
         channels = await self._recall(plan, profile, tenant_ctx)
         trimmed, _allocations = allocate_by_budget(channels, profile.channel_budgets)
         fused = self.fusioner.fuse(trimmed, profile.fusion_config)
-        reranked = await rerank(plan.primary, fused, profile, tenant_ctx, reranker=self.reranker)
-        return _RecallPass(channels=channels, reranked=reranked)
+        return channels, fused
 
     async def _recall(
         self,
@@ -378,6 +382,7 @@ class _RecallPass:
     """
 
     channels: dict[str, list[ScoredChunk]]
+    fused: list[ScoredChunk]
     reranked: RerankResult
 
 
