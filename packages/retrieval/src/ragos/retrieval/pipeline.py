@@ -214,6 +214,10 @@ class RAGPipeline:
             )
             explain.rerank_depth = final_ranked.depth
             explain.rerank_model_profile = final_ranked.rerank_model_profile
+            # Keep diagnostics aligned with the final candidates passed to evidence selection.
+            explain.fusion_scores = {
+                str(c.chunk_id): c.score for c in final_ranked.ranked[: profile.top_k_rerank]
+            }
 
         selected = select_evidence(final_ranked.ranked, profile)
         parents, parents_resolved = await self._expand(selected, tenant_ctx)
