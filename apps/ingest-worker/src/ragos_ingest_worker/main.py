@@ -16,11 +16,17 @@ import sys
 from pathlib import Path
 
 from ragos.core.config import Settings, get_settings
+from ragos.core.errors import ValidationError
 from ragos.core.logging import configure_logging, get_logger
 from ragos.runtime.tasks import (
     TaskCommand,
     TaskHandlerRegistry,
     process_one_task,
+)
+from ragos.runtime.worker_embedding import (
+    HASH_TEST_MODE,
+    LOCAL_GATEWAY_MODE,
+    validate_worker_embedding_settings,
 )
 from ragos.storage.db import (
     ensure_schemas,
@@ -34,25 +40,59 @@ LOGGER = get_logger(__name__)
 POLL_IDLE_INTERVAL_SECONDS = 2.0
 DEFAULT_LEASE_SECONDS = 900
 
-
-def build_registry(settings: Settings) -> TaskHandlerRegistry:
-    if settings.app_env != "test" or not settings.task_test_embedding:
-        raise RuntimeError("ingest worker unavailable: real gateway embedding is not connected")
-    if not settings.qdrant_url:
-        raise RuntimeError("ingest worker requires an explicit vector service")
-    if (settings.embedding_profile, settings.embedding_version) != ("hash-test", "sha256-hash-v1"):
-        raise RuntimeError("test ingest worker requires the frozen hash embedding identity")
-    registry = TaskHandlerRegistry()
-    # Configuration is server-owned. Do not copy ambient env or values from a task payload.
-    environment = {
-        "RAGOS_APP_ENV": "test",
-        "RAGOS_TASK_TEST_EMBEDDING": "true",
+def _base_environment(settings: Settings) -> dict[str, str]:
+    return {
         "RAGOS_PG_DSN": settings.pg_dsn,
         "RAGOS_QDRANT_URL": settings.qdrant_url,
         "RAGOS_STORAGE_ROOT": str(Path(settings.storage_root).resolve()),
         "RAGOS_EMBEDDING_PROFILE": settings.embedding_profile,
         "RAGOS_EMBEDDING_VERSION": settings.embedding_version,
     }
+
+
+def _environment(settings: Settings, mode: str) -> dict[str, str]:
+    # Configuration is server-owned. Do not copy ambient env or values from a task payload.
+    environment = _base_environment(settings)
+    if mode == HASH_TEST_MODE:
+        environment.update(
+            {
+                "RAGOS_APP_ENV": "test",
+                "RAGOS_TASK_TEST_EMBEDDING": "true",
+            }
+        )
+        return environment
+    if mode == LOCAL_GATEWAY_MODE:
+        if settings.local_model_provider_id is None:
+            raise RuntimeError("development ingest requires an admitted local model provider")
+        environment.update(
+            {
+                "RAGOS_APP_ENV": "dev",
+                "RAGOS_INGEST_LOCAL_MODEL_ENABLED": "true",
+                "RAGOS_LOCAL_MODEL_ENABLED": "true",
+                "RAGOS_LOCAL_MODEL_PROVIDER_ID": str(settings.local_model_provider_id),
+                "RAGOS_LOCAL_MODEL_BASE_URL": settings.local_model_base_url,
+                "RAGOS_LOCAL_MODEL_CHAT": settings.local_model_chat,
+                "RAGOS_LOCAL_MODEL_EMBED": settings.local_model_embed,
+                "RAGOS_LOCAL_MODEL_EMBED_REVISION": settings.local_model_embed_revision,
+                "RAGOS_LOCAL_MODEL_EMBED_DIMENSION": str(
+                    settings.local_model_embed_dimension
+                ),
+                "RAGOS_API_HOST": settings.api_host,
+            }
+        )
+        return environment
+    raise RuntimeError("ingest embedding mode is unavailable")
+
+
+def build_registry(settings: Settings) -> TaskHandlerRegistry:
+    try:
+        mode = validate_worker_embedding_settings(settings)
+    except ValidationError as exc:
+        raise RuntimeError(str(exc)) from exc
+    if not settings.qdrant_url:
+        raise RuntimeError("ingest worker requires an explicit vector service")
+    environment = _environment(settings, mode)
+    registry = TaskHandlerRegistry()
 
     def command(*, task, tenant_ctx):
         if task.tenant_id != tenant_ctx.tenant_id or task.kind != "ingest_document":

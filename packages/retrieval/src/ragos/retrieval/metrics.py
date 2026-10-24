@@ -8,6 +8,7 @@ cannot be regressed, only eyeballed.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from uuid import UUID
@@ -247,6 +248,7 @@ class ComparisonVerdict:
 #: Metrics where an increase is the goal. A decrease blocks promotion regardless
 #: of how much another metric improved.
 _HIGHER_IS_BETTER = (
+    "precision_at_10",
     "recall_at_5",
     "recall_at_10",
     "recall_at_50",
@@ -283,9 +285,20 @@ def compare_bundles(
     regressions: list[str] = []
     improvements: dict[str, float] = {}
 
+    # Missing or nonfinite observations are not evidence for promotion. Check
+    # before comparing: NaN makes both ordering comparisons return false.
+    if not baseline or not candidate:
+        regressions.append("nonempty baseline and candidate metrics are required")
+    if set(baseline) != set(candidate):
+        regressions.append("baseline and candidate metric sets differ")
+    if not all(math.isfinite(value) for value in (*baseline.values(), *candidate.values())):
+        regressions.append("metrics must be finite")
+    if not math.isfinite(epsilon) or epsilon < 0:
+        regressions.append("comparison tolerance must be finite and nonnegative")
+    if regressions:
+        return ComparisonVerdict(promotable=False, regressions=regressions)
+
     for key, base_value in baseline.items():
-        if key not in candidate:
-            continue
         cand_value = candidate[key]
         if key in _HIGHER_IS_BETTER:
             if cand_value < base_value - epsilon:

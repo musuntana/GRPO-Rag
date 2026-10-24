@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     # Explicit non-production LOCAL MODEL ONLY; disabled by default.
     # No tenant-entered arbitrary model URLs or decrypted key-pool secrets.
     local_model_enabled: bool = False
+    # Separate opt-in for the trusted ingest worker real-gateway path.
+    ingest_local_model_enabled: bool = False
     local_model_provider_id: UUID | None = None
     local_model_base_url: str = ""
     local_model_chat: str = ""
