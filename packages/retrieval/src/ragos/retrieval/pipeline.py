@@ -29,7 +29,7 @@ from ragos.retrieval.query.types import ConversationTurn, QueryPlan
 from ragos.retrieval.recall.parents import ParentResolver, ResolvedParents
 from ragos.retrieval.refine import RefineFn, RefineRequest, deterministic_refine
 from ragos.retrieval.reranker import RerankFn, RerankResult, rerank, select_evidence
-from ragos.retrieval.types import RetrieverProfile, ScoredChunk
+from ragos.retrieval.types import RetrieverProfile, ScoredChunk, same_evidence_lineage
 from ragos.retrieval.verify import EntailmentFn, citation_counts, verify_citations
 
 LOGGER = get_logger(__name__)
@@ -405,24 +405,7 @@ def _interleave_unique(
                 continue
             previous = seen.get(chunk.chunk_id)
             if previous is not None:
-                lineage_fields = (
-                    "doc_id",
-                    "kb_id",
-                    "text",
-                    "layer",
-                    "parent_chunk_id",
-                    "page_no",
-                    "page_count",
-                    "start_char_idx",
-                    "end_char_idx",
-                    "element_type",
-                    "source_identity",
-                    "source_text",
-                )
-                if any(
-                    getattr(previous, name) != getattr(chunk, name)
-                    for name in lineage_fields
-                ):
+                if not same_evidence_lineage(previous, chunk):
                     raise ValidationError("cross-pass evidence has conflicting source lineage")
                 continue
             seen[chunk.chunk_id] = chunk
