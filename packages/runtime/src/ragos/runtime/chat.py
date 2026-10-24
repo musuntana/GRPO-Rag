@@ -227,6 +227,10 @@ class ChatService:
             {
                 "channels": len(explain.per_channel_counts),
                 "per_channel_counts": explain.per_channel_counts,
+                "recall_queries": explain.recall_queries,
+                "re_retrieval_attempted": explain.re_retrieval_attempted,
+                "re_retrieval_added_chunks": explain.re_retrieval_added_chunks,
+                "re_retrieval_channel_counts": explain.re_retrieval_channel_counts,
                 "strategy": explain.query_strategy,
             },
         )
