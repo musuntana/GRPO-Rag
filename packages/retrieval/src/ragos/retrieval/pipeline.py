@@ -51,7 +51,12 @@ class RetrievalExplain:
     rewritten_query: str
     per_channel_counts: dict[str, int] = field(default_factory=dict)
     channel_budgets: dict[str, float] = field(default_factory=dict)
+    #: Raw fused scores before model reranking, for the original query.
     fusion_scores: dict[str, float] = field(default_factory=dict)
+    #: Scores emitted by the final reranker (or identity ranking) for the selected pool.
+    rerank_scores: dict[str, float] = field(default_factory=dict)
+    #: Raw fused scores for the refined-query recall pass; not comparable to fusion_scores.
+    re_retrieval_fusion_scores: dict[str, float] = field(default_factory=dict)
     rerank_depth: int = 0
     rerank_model_profile: str | None = None
     gate_verdict: str | None = None
@@ -148,8 +153,9 @@ class RAGPipeline:
         ranked = await self._retrieve_and_rerank(plan, profile, tenant_ctx)
         explain.per_channel_counts = {name: len(chunks) for name, chunks in ranked.channels.items()}
         explain.channel_budgets = dict(profile.channel_budgets)
-        explain.fusion_scores = {
-            str(c.chunk_id): c.score for c in ranked.reranked.ranked[: profile.top_k_rerank]
+        explain.fusion_scores = {str(c.chunk_id): c.score for c in ranked.fused}
+        explain.rerank_scores = {
+            str(c.chunk_id): c.score for c in ranked.reranked.ranked
         }
         explain.rerank_depth = ranked.reranked.depth
         explain.rerank_model_profile = ranked.reranked.rerank_model_profile
@@ -207,6 +213,9 @@ class RAGPipeline:
             explain.re_retrieval_channel_counts = {
                 name: len(chunks) for name, chunks in retry_channels.items()
             }
+            explain.re_retrieval_fusion_scores = {
+                str(c.chunk_id): c.score for c in retry_fused
+            }
             seen = {c.chunk_id for c in ranked.fused}
             added = [c for c in retry_fused if c.chunk_id not in seen]
             explain.re_retrieval_added_chunks = len(added)
@@ -225,9 +234,10 @@ class RAGPipeline:
             )
             explain.rerank_depth = final_ranked.depth
             explain.rerank_model_profile = final_ranked.rerank_model_profile
-            # Keep diagnostics aligned with the final candidates passed to evidence selection.
-            explain.fusion_scores = {
-                str(c.chunk_id): c.score for c in final_ranked.ranked[: profile.top_k_rerank]
+            # Keep final reranker scores aligned with evidence selection; retain each
+            # query's independent fusion scores above for stage-by-stage diagnosis.
+            explain.rerank_scores = {
+                str(c.chunk_id): c.score for c in final_ranked.ranked
             }
 
         selected = select_evidence(final_ranked.ranked, profile)
