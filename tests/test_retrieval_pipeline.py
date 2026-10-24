@@ -467,6 +467,49 @@ def test_re_retrieval_reranks_new_and_original_evidence_together() -> None:
     assert {answering.chunk_id, older[0].chunk_id} <= model_inputs[-1][1]
 
 
+def test_re_retrieval_reranks_existing_candidates_for_refined_query() -> None:
+    """A refined query can improve ranking even when recall returns no new IDs."""
+    ctx = _ctx()
+    first = _chunk("First-pass candidate")
+    second = _chunk("Refined-query candidate")
+    rerank_queries: list[str] = []
+
+    async def recall(query, _profile, _context):
+        return [second, first] if query == "refined question" else [first, second]
+
+    async def refine(_request, _context):
+        return "refined question"
+
+    async def rerank_model(query, chunks, _context):
+        rerank_queries.append(query)
+        preferred = second.chunk_id if query == "refined question" else first.chunk_id
+        for item in chunks:
+            item.score = 1.0 if item.chunk_id == preferred else 0.0
+        return sorted(chunks, key=lambda item: item.score, reverse=True)
+
+    profile = _profile(
+        channel_budgets={"dense": 1.0},
+        top_k_generate=2,
+        top_k_rerank=10,
+        rerank_model_profile="synthetic-reranker",
+    )
+    profile.tenant_id = ctx.tenant_id
+    result = asyncio.run(
+        RAGPipeline(
+            recall_channels={"dense": recall},
+            generator=_gen,
+            grader=RelevanceGrader(judge=_judge([1, 1]), thresholds=CragThresholds()),
+            reranker=rerank_model,
+            refiner=refine,
+        ).run("original question", ctx, profile)
+    )
+
+    assert result.retrieval_explain.re_retrieval_added_chunks == 0
+    assert result.evidence[0].chunk_id == second.chunk_id
+    assert len(rerank_queries) == 2
+    assert rerank_queries[-1] == "refined question"
+
+
 def test_re_retrieval_without_reranker_keeps_new_and_old_evidence() -> None:
     """The identity reranker must also give fresh evidence a Top-K opportunity."""
     ctx = _ctx()
