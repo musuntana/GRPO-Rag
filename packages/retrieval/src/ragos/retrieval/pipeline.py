@@ -77,6 +77,7 @@ class RetrievalExplain:
     refined_query: str | None = None
     re_retrieval_attempted: bool = False
     re_retrieval_added_chunks: int = 0
+    re_retrieval_channel_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -189,7 +190,7 @@ class RAGPipeline:
 
         final_ranked = ranked.reranked
         if gate is not None and gate.action == GateAction.RE_RETRIEVE:
-            _, retry_fused = await self._retrieve_and_fuse(
+            retry_channels, retry_fused = await self._retrieve_and_fuse(
                 QueryPlan(
                     strategy=plan.strategy,
                     primary=refined,
@@ -202,6 +203,10 @@ class RAGPipeline:
                 tenant_ctx,
             )
             explain.re_retrieval_attempted = True
+            explain.recall_queries.append(refined)
+            explain.re_retrieval_channel_counts = {
+                name: len(chunks) for name, chunks in retry_channels.items()
+            }
             seen = {c.chunk_id for c in ranked.fused}
             added = [c for c in retry_fused if c.chunk_id not in seen]
             explain.re_retrieval_added_chunks = len(added)
