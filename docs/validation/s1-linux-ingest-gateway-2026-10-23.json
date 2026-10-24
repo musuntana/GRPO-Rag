@@ -1,0 +1,62 @@
+{
+  "elapsed_seconds": 1.763,
+  "key_pool_rows": 0,
+  "limits": [
+    "Disposable local tenant, synthetic text and local model endpoint only.",
+    "One worker task is not a latency or quality benchmark.",
+    "Model digest is the operator-recorded local identity, not weight attestation.",
+    "No upload API, UI, real enterprise corpus, production auth or GRPO."
+  ],
+  "manifest": {
+    "chunk_total": 2,
+    "indexing_state": "indexed",
+    "manifest_id": "024771c1-5aff-4883-8e87-23a17a98d43e",
+    "pg_digest": "67de684091470aebc5a035f5e5cdf30817bb78b7df373ebd098a2a180b551fcd",
+    "reconciled": true,
+    "vector_digest": "67de684091470aebc5a035f5e5cdf30817bb78b7df373ebd098a2a180b551fcd"
+  },
+  "model": {
+    "base_url": "http://model-runner.docker.internal/engines/v1",
+    "chat_model": "docker.io/ai/qwen3:4b-instruct-2507-q4_K_M",
+    "embedding_dimension": 1024,
+    "embedding_model": "docker.io/ragos/qwen3-embedding:0.6b-q8",
+    "embedding_profile": "qwen3_embedding",
+    "embedding_revision": "79898cf0ff54015bf309900ccc25a340dd0ab011bbc78486e50abbcfb4ae908e",
+    "embedding_version": "508b34078998e0aa_79898cf0ff54015bf309900ccc25a340dd0ab011bbc78486e50abbcfb4ae908e_1024"
+  },
+  "provider": {
+    "profile_id": "35a89cd1-2ed1-4136-99ef-f666f7504ce1",
+    "provider_id": "5bacfa61-5273-46ff-aca4-dfc02057b47e"
+  },
+  "runtime": {
+    "machine": "aarch64",
+    "python": "3.12.15",
+    "sys_platform": "linux"
+  },
+  "schema_version": "s1-linux-ingest-gateway-acceptance-v1",
+  "source_sha256": {
+    "apps/ingest-worker/src/ragos_ingest_worker/main.py": "28016525130e8a7c2d7255b5cc053c8cefb349f376f04123b15d2be18685151d",
+    "packages/model-gateway/src/ragos/model_gateway/router.py": "1cb406b27f030a24ec468aeec2a7e21f6fbdf636c215b988c961e43b33b7da68",
+    "packages/runtime/src/ragos/runtime/ingest_job.py": "8cfbf0f4ae7c785f781ed726d5725193758588b8a7b13c77cb2028504493b734",
+    "packages/runtime/src/ragos/runtime/worker_embedding.py": "b6cc5ac9e9dc5134aa4ab3aa2272d0c1e528f1fe41b19f448ea4d9456697ebf7"
+  },
+  "status": "PASS",
+  "task": {
+    "attempts": 1,
+    "error_code": null,
+    "status": "completed",
+    "task_id": "8c9c812e-16df-448d-b57f-e445b432ced8"
+  },
+  "task_elapsed_seconds": 1.459,
+  "tenant": {
+    "kb_id": "c0c0f7b9-c562-45b1-9a3d-549d2cf87e26",
+    "tenant_id": "5b50de05-c0ca-40eb-91ab-31a0115b028c"
+  },
+  "vector": {
+    "child_cosine_to_direct_model_call": 0.99999979,
+    "collection": "ragos_qwen3_embedding_347de45580058cf40e8832e5166ad49b786ad19852882f0df94e650d37235042_stable",
+    "points": 2,
+    "vector_dimension": 1024
+  },
+  "verified_at": "2026-10-23T08:31:27.313232+00:00"
+}

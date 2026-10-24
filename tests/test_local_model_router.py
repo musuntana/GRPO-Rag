@@ -233,6 +233,31 @@ def test_model_router_automatically_enables_only_explicit_local_settings(
     assert ModelRouter(_FakeSession())._local is None
 
 
+def test_explicit_settings_are_authoritative_without_ambient_getter(monkeypatch) -> None:
+    config = _admission()
+
+    def forbid_ambient_settings():
+        raise AssertionError("explicit settings must not read the ambient .env getter")
+
+    monkeypatch.setattr("ragos.model_gateway.router.get_settings", forbid_ambient_settings)
+    enabled = Settings(
+        _env_file=None, app_env="dev", api_host="127.0.0.1",
+        local_model_enabled=True, local_model_provider_id=config.provider_id,
+        local_model_base_url=BASE, local_model_chat=CHAT,
+        local_model_embed=EMBED, local_model_embed_dimension=3,
+    )
+    router = ModelRouter(_FakeSession(), settings=enabled)
+    assert router._local is not None
+    assert router._local.provider_id == config.provider_id
+
+    disabled = enabled.model_copy(update={"local_model_enabled": False})
+    assert ModelRouter(_FakeSession(), settings=disabled)._local is None
+
+    production = enabled.model_copy(update={"app_env": "prod"})
+    with pytest.raises(ValidationError, match="local model gateway"):
+        ModelRouter(_FakeSession(), local_model=config, settings=production)
+
+
 def test_injected_local_model_rejected_on_exposed_dev_api_or_prod(monkeypatch) -> None:
     local = _admission()
     for app_env, api_host in (
