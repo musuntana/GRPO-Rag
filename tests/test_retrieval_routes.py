@@ -180,8 +180,13 @@ def _outcome(warnings: list[str] | None = None):
         rewritten_query="rewritten",
         per_channel_counts={"lexical": 1},
         channel_budgets={"lexical": 1.0},
+        fusion_scores={str(chunk.chunk_id): 0.3},
+        rerank_scores={str(chunk.chunk_id): 0.9},
+        re_retrieval_fusion_scores={str(chunk.chunk_id): 0.2},
+        re_retrieval_channel_counts={"lexical": 2},
         refined_query="refined",
-        recall_queries=["refined"],
+        recall_queries=["rewritten", "refined"],
+        re_retrieval_attempted=True,
         query_strategy="direct",
         citation_supported=1,
         citation_generated=1,
@@ -418,6 +423,13 @@ def test_retrieval_returns_the_answer_citations_and_explain(client: TestClient) 
     assert body["citations"][0]["status"] == "verified"
     assert body["explain"]["refined_query"] == "refined"
     assert body["explain"]["per_channel_counts"] == {"lexical": 1}
+    chunk_id = body["evidence"][0]["chunk_id"]
+    assert body["explain"]["recall_queries"] == ["rewritten", "refined"]
+    assert body["explain"]["fusion_scores"] == {chunk_id: 0.3}
+    assert body["explain"]["rerank_scores"] == {chunk_id: 0.9}
+    assert body["explain"]["re_retrieval_fusion_scores"] == {chunk_id: 0.2}
+    assert body["explain"]["re_retrieval_channel_counts"] == {"lexical": 2}
+    assert body["explain"]["re_retrieval_attempted"] is True
     assert body["evidence"][0]["page_no"] == 3
 
 
