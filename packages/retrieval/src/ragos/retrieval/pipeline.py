@@ -10,7 +10,7 @@ no stage reads tenant scope from ambient state.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import zip_longest
 from uuid import UUID
 
@@ -176,25 +176,6 @@ class RAGPipeline:
         refined = await self._refine(plan.primary, gate, ranked.reranked.ranked, tenant_ctx)
         explain.refined_query = refined
 
-        if gate is not None and gate.action == GateAction.REFUSE:
-            # The refuse path routes through the same evidence-assembly shape as
-            # the others. A branch that builds its own context is how the
-            # refusal path starts returning half-answers.
-            LOGGER.info(
-                "relevance gate refused; abstaining",
-                extra={"confidence": gate.confidence, "trace_id": tenant_ctx.trace_id},
-            )
-            return RAGResult(
-                answer="I don't have enough information to answer this.",
-                citations=[],
-                retrieval_explain=explain,
-                evidence=(),
-                gate=gate,
-                abstained=True,
-                token_usage={},
-                query_plan=plan,
-            )
-
         final_ranked = ranked.reranked
         if gate is not None and gate.action == GateAction.RE_RETRIEVE:
             retry_channels, retry_fused = await self._retrieve_and_fuse(
@@ -248,6 +229,36 @@ class RAGPipeline:
                 }
                 if final_ranked.rerank_model_profile is not None
                 else {}
+            )
+
+            # A retry earns generation only after newly ranked evidence passes
+            # the same relevance gate. Exhaustion is an action, not a fabricated
+            # relevance verdict: retain "ambiguous" while refusing another retry.
+            gate = await self.grader.grade(refined, final_ranked.ranked, tenant_ctx)
+            if gate.action != GateAction.PROCEED:
+                gate = replace(gate, action=GateAction.REFUSE)
+            explain.gate_verdict = gate.verdict
+            explain.gate_confidence = gate.confidence
+            explain.gate_action = gate.action
+            explain.rails_prompt_id = gate.prompt_id
+
+        if gate is not None and gate.action == GateAction.REFUSE:
+            # The refuse path routes through the same evidence-assembly shape as
+            # the others. A branch that builds its own context is how the
+            # refusal path starts returning half-answers.
+            LOGGER.info(
+                "relevance gate refused; abstaining",
+                extra={"confidence": gate.confidence, "trace_id": tenant_ctx.trace_id},
+            )
+            return RAGResult(
+                answer="I don't have enough information to answer this.",
+                citations=[],
+                retrieval_explain=explain,
+                evidence=(),
+                gate=gate,
+                abstained=True,
+                token_usage={},
+                query_plan=plan,
             )
 
         selected = select_evidence(final_ranked.ranked, profile)

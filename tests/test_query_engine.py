@@ -286,7 +286,8 @@ def test_a_refused_answer_still_carries_a_refined_query() -> None:
         return "should not run [1]."
 
     async def judge(_query, _messages, _ctx):
-        return json.dumps({"grades": [{"chunk_id": str(_chunk("x").chunk_id), "grade": 0}]})
+        return json.dumps({"grades": [{"chunk_id": cid, "grade": 0}
+                                     for cid in _chunk_ids(_messages)]})
 
     pipeline = RAGPipeline(
         recall_channels={"dense": recall},
@@ -407,7 +408,9 @@ def test_the_ambiguous_path_re_retrieves_once_and_reports_what_it_added() -> Non
     result = asyncio.run(pipeline.run("what did we agree?", ctx, profile))
 
     explain = result.retrieval_explain
-    assert explain.gate_action == GateAction.RE_RETRIEVE
+    assert explain.gate_action == GateAction.PROCEED
+    assert explain.gate_verdict == "relevant"
+    assert result.abstained is False
     assert explain.re_retrieval_attempted is True
     assert explain.re_retrieval_added_chunks == 1
     # Two sweeps, not a loop: a gate that has said "ambiguous" twice has said the
