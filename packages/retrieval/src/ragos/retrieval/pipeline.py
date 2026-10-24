@@ -205,12 +205,15 @@ class RAGPipeline:
             seen = {c.chunk_id for c in final_ranked.ranked}
             added = [c for c in retry.reranked.ranked if c.chunk_id not in seen]
             explain.re_retrieval_added_chunks = len(added)
+            # Validate shared chunk IDs on every second pass, even when the
+            # retry contributes no new IDs. Otherwise changed immutable source
+            # lineage can be silently ignored when added is empty.
+            combined = _interleave_unique(retry.reranked.ranked, final_ranked.ranked)
             if added:
                 # Re-rank one bounded, deduplicated pool. Appending the retry to
                 # the first pass silently discards new pages at the Top-K cutoff.
                 # Interleaving gives both queries a chance in rerank's bounded
                 # window, without comparing scores from different queries.
-                combined = _interleave_unique(retry.reranked.ranked, final_ranked.ranked)
                 final_ranked = await rerank(
                     refined, combined, profile, tenant_ctx, reranker=self.reranker
                 )
