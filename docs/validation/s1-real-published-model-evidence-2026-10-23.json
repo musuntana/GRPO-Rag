@@ -1,0 +1,68 @@
+{
+  "verified_at": "2026-10-23T13:39:08.783720+08:00",
+  "base_sha": "d6e74f2d10d94f759a5436e1528f8106b798582b",
+  "branch": "codex/s1-real-published-model-evidence",
+  "source_state": "uncommitted_new_acceptance_test",
+  "acceptance": {
+    "embedding_dimension": 1024,
+    "embedding_profile": "s1run_e9bb0e4c797a",
+    "embedding_version": "508b34078998e0aa_79898cf0ff54015bf309900ccc25a340dd0ab011bbc78486e50abbcfb4ae908e_1024",
+    "gate_env": "RAGOS_RUN_REAL_LOCAL_MODELS",
+    "model": "docker.io/ragos/qwen3-embedding:0.6b-q8",
+    "model_answers_or_vectors_or_text_recorded": false,
+    "model_http_budget": 20,
+    "model_http_calls": 7,
+    "model_identity_scope": "operator_attested_only_not_cryptographic",
+    "model_revision": "79898cf0ff54015bf309900ccc25a340dd0ab011bbc78486e50abbcfb4ae908e",
+    "model_route_paths": [
+      "/engines/v1/embeddings"
+    ],
+    "outcome": "PASS",
+    "probes": {
+      "foreign_tenant_embeds_but_no_evidence": true,
+      "owned_collection_removed": true,
+      "passed": true,
+      "unbound_tenant_refused_before_model_call": true,
+      "wrong_version_points_without_pg_backfill": true,
+      "wrong_version_refused_before_model_call": true
+    },
+    "qdrant_namespace": "ragos_s1run_e9bb0e4c797a_bfc524e0fc2a6b39a9fce287e5415f1c357467cf94b926cf141d70ae84c0eae7_stable",
+    "representation_sha256": "79a0e9b34ee2fe0c0ae1c2878c08bf840eb04906d28b65da4c5f86ef8a90b176",
+    "rows": {
+      "model_profile": 2,
+      "negative_tenant_rows": 2,
+      "owned_tenant_via_fixture": 1,
+      "provider": 1,
+      "published_pages_read_back": [
+        1,
+        2
+      ],
+      "tenant_model_binding": 2
+    },
+    "source_sha256": "0e096ee308781a2fe97afd381c98b57ae6ba80e90258e243e9fa4d7498776045",
+    "test_code_sha256": "98c120ec916cdd09eef50926918763be8172e76a8f140a9d2cc24a778ec8ae0c",
+    "wall_seconds": 2.513
+  },
+  "verification": {
+    "real_model_operator_run": "3 passed in 3.43s",
+    "default_closed_run": "2 passed, 1 skipped",
+    "existing_service_baseline": "13 passed",
+    "ruff": "PASS",
+    "local_full_with_services": "1 failed, 1072 passed, 12 skipped",
+    "unchanged_baseline_failure": "tests/test_storage_integration.py::test_real_dispatch_uses_cpu_process_heartbeats_and_no_business_row_lock",
+    "failure_reproduced_without_new_test_module": true
+  },
+  "limits": {
+    "human_gold": false,
+    "chat_on_published_corpus": false,
+    "worker_process_acceptance": false,
+    "server_restart_recovery": false,
+    "semantic_citation": false,
+    "production_authorization": false,
+    "pg_fixture_superuser": true
+  },
+  "images": {
+    "postgres:18": "sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6",
+    "qdrant/qdrant:v1.19.1-unprivileged": "sha256:801777072776dc81b2a9dd2007b2ed487571f21ecd30efffd15ddb1671f2193d"
+  }
+}
