@@ -678,6 +678,7 @@ def test_re_retrieval_without_reranker_keeps_new_and_old_evidence() -> None:
         older[0].chunk_id,
     ]
     assert result.retrieval_explain.re_retrieval_added_chunks == 1
+    assert result.retrieval_explain.rerank_scores == {}
 
 
 def test_re_retrieval_rejects_conflicting_source_lineage() -> None:
