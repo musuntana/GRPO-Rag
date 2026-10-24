@@ -571,7 +571,7 @@ def test_re_retrieval_preserves_first_pass_reranker_winner() -> None:
         rerank_model_profile="synthetic-reranker",
     )
     profile.tenant_id = ctx.tenant_id
-    asyncio.run(
+    result = asyncio.run(
         RAGPipeline(
             recall_channels={"dense": recall},
             generator=_gen,
@@ -585,6 +585,7 @@ def test_re_retrieval_preserves_first_pass_reranker_winner() -> None:
     assert first_reranked.chunk_id in model_inputs[0][1]
     assert refined_best.chunk_id in model_inputs[1][1]
     assert first_reranked.chunk_id in model_inputs[1][1]
+    assert first_reranked.chunk_id in {item.chunk_id for item in result.evidence}
 
 
 def test_re_retrieval_without_reranker_keeps_new_and_old_evidence() -> None:
