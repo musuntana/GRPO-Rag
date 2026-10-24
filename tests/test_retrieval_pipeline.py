@@ -542,6 +542,56 @@ def test_re_retrieval_reranks_existing_candidates_for_refined_query() -> None:
     assert result.retrieval_explain.re_retrieval_channel_counts == {"dense": 2}
 
 
+def test_re_retrieval_gives_new_evidence_a_slot_when_top_candidate_overlaps() -> None:
+    """A shared top candidate must not crowd fresh refined-query evidence out of Top-K."""
+    ctx = _ctx()
+    shared = _chunk("Shared top candidate", score=0.99)
+    first_only = _chunk("First-pass-only candidate", score=0.98)
+    retry_only = _chunk("Refined-query-only candidate", score=0.98)
+    model_inputs: list[tuple[str, set[UUID]]] = []
+
+    async def recall(query, _profile, _context):
+        return (
+            [shared, retry_only]
+            if query == "refined question"
+            else [shared, first_only]
+        )
+
+    async def refine(_request, _context):
+        return "refined question"
+
+    async def rerank_model(query, chunks, _context):
+        model_inputs.append((query, {item.chunk_id for item in chunks}))
+        preferred = retry_only.chunk_id if query == "refined question" else shared.chunk_id
+        for item in chunks:
+            item.score = 10.0 if item.chunk_id == preferred else 0.0
+        return sorted(chunks, key=lambda item: item.score, reverse=True)
+
+    profile = _profile(
+        channel_budgets={"dense": 1.0},
+        top_k_recall=10,
+        top_k_rerank=2,
+        top_k_generate=2,
+        rerank_model_profile="synthetic-reranker",
+    )
+    profile.tenant_id = ctx.tenant_id
+    result = asyncio.run(
+        RAGPipeline(
+            recall_channels={"dense": recall},
+            generator=_gen,
+            grader=RelevanceGrader(judge=_judge([1, 1]), thresholds=CragThresholds()),
+            reranker=rerank_model,
+            refiner=refine,
+        ).run("original question", ctx, profile)
+    )
+
+    assert len(model_inputs) == 2
+    assert shared.chunk_id in model_inputs[1][1]
+    assert retry_only.chunk_id in model_inputs[1][1]
+    assert first_only.chunk_id not in model_inputs[1][1]
+    assert retry_only.chunk_id in {item.chunk_id for item in result.evidence}
+
+
 def test_re_retrieval_preserves_first_pass_reranker_winner() -> None:
     """A bounded retry pool must retain the first pass's strongest reranked candidate."""
     ctx = _ctx()
