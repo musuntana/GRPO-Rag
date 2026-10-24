@@ -503,11 +503,10 @@ def test_re_retrieval_rejects_conflicting_source_lineage() -> None:
     """A second read must not silently replace an already-seen source span."""
     ctx = _ctx()
     existing = _chunk("Original immutable page")
-    answering = _chunk("New answering page")
     conflicting = replace(existing, source_text="Modified text of different length")
 
     async def recall(query, _profile, _context):
-        return [answering, conflicting] if query == "refined question" else [existing]
+        return [conflicting] if query == "refined question" else [existing]
 
     async def refine(_request, _context):
         return "refined question"
@@ -517,7 +516,7 @@ def test_re_retrieval_rejects_conflicting_source_lineage() -> None:
     pipeline = RAGPipeline(
         recall_channels={"dense": recall},
         generator=_gen,
-        grader=RelevanceGrader(judge=_judge([1, 1]), thresholds=CragThresholds()),
+        grader=RelevanceGrader(judge=_judge([1]), thresholds=CragThresholds()),
         refiner=refine,
     )
     with pytest.raises(ValidationError, match="cross-pass evidence has conflicting source lineage"):
