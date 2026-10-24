@@ -531,6 +531,11 @@ def test_re_retrieval_reranks_existing_candidates_for_refined_query() -> None:
     assert result.evidence[0].chunk_id == second.chunk_id
     assert len(rerank_queries) == 2
     assert rerank_queries[-1] == "refined question"
+    assert result.retrieval_explain.recall_queries == [
+        "original question",
+        "refined question",
+    ]
+    assert result.retrieval_explain.re_retrieval_channel_counts == {"dense": 2}
 
 
 def test_re_retrieval_preserves_first_pass_reranker_winner() -> None:
