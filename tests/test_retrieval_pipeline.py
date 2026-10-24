@@ -461,7 +461,7 @@ def test_re_retrieval_reranks_new_and_original_evidence_together() -> None:
     assert result.retrieval_explain.re_retrieval_added_chunks == 1
     assert result.retrieval_explain.rerank_model_profile == "synthetic-reranker"
     assert result.retrieval_explain.rerank_depth == 9
-    assert len(model_inputs) == 3
+    assert len(model_inputs) == 2
     assert model_inputs[-1][0] == "refined question"
     assert {answering.chunk_id, older[0].chunk_id} <= model_inputs[-1][1]
 
