@@ -8,7 +8,7 @@ the stale subset an earlier draft of ``implementation.md`` showed.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
@@ -78,6 +78,19 @@ class ScoredChunk:
         if self.source_identity is None:
             raise ValidationError("unversioned candidate cannot be enterprise evidence")
         return self.source_identity
+
+
+# Channel and scores describe a retrieval observation, not immutable evidence.
+_EVIDENCE_OBSERVATION_FIELDS = frozenset({"channel", "score", "rerank_score"})
+
+
+def same_evidence_lineage(left: ScoredChunk, right: ScoredChunk) -> bool:
+    """Compare all immutable candidate fields, allowing per-query scores/channels."""
+    return all(
+        getattr(left, item.name) == getattr(right, item.name)
+        for item in fields(ScoredChunk)
+        if item.name not in _EVIDENCE_OBSERVATION_FIELDS
+    )
 
 
 @dataclass(slots=True)
